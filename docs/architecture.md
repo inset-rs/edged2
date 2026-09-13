@@ -1,0 +1,63 @@
+# How Edged is put together
+
+Edged is the reference for how an Inset app is structured, so the split has to be one worth copying: logic that knows nothing of widgets, an interface that holds no logic, and one mechanism joining them. This note is the proposal for that split, what it costs to get there from today's code, and how two features already on the horizon fit: a window preview when a row is hovered, and PowerToys-style grab-and-move.
+
+## The three crates
+
+```
+edged-macos   what macOS knows and can do: screens, Spaces, applications, windows,
+              notifications, badges, pointer, appearance, backdrop. Plain types,
+              objc2 inside, no Inset. The one crate allowed unsafe.
+
+edged-core    the app: entities on inset-foundation alone. Desktop, Permissions,
+              Appearance, Clearing, and later Previews and Grab. Owns every
+              timer, watcher and subscription. Testable with AppCell, no window.
+
+edged         the interface: inset + inset-winui + edged-core. Root, panel, rows,
+              sections, theme, menus, permission view. Reads entities in build,
+              calls entity methods from callbacks, and that is all it does.
+```
+
+`edged-macos` stays as it is. Today `edged` holds both of the other two; the work is to carve `edged-core` out of it.
+
+## The joining mechanism
+
+Inset already has the gpui model, and this design uses nothing beyond it:
+
+- A widget that reads an entity in `build` is rebuilt when that entity calls `notify`. The read is the subscription; nothing is wired by hand.
+- A callback changes state through `entity.update(app, |desktop, cx| desktop.focus(window, cx))`. The interface never holds mutable state of the app's, only view state such as whether a panel is out.
+- An entity that must react to another's transition, rather than its state, subscribes to a typed event: `Permissions` emits `Granted`, `Desktop` subscribes and rescans. Events are for transitions; `notify` is for state.
+- Entities are created once in `edged::run`, before the widget tree, and handed to the root as handles. No widget creates an entity.
+- Native callbacks reach an entity through `AsyncApp::post`, never by borrowing the app from inside a notification.
+
+Two rules follow. Nothing in `edged-core` names a widget, a window or a colour. Nothing in `edged` calls `edged-macos` except for what concerns its own windows: putting the glass behind a panel, and reading where the pointer is relative to one.
+
+## The entities
+
+| Entity | State | Owns | Methods the interface calls |
+|---|---|---|---|
+| `Desktop` | screens, Spaces, applications with their windows, which Space each screen shows, icons | the watcher, a queue of reads done a slice per turn, the change-gathering timer, the reconcile timer, the badge timer | `refresh`, `focus(window)`, `switch_to(space)`, `move_to_space(window, space)`, the queries `windows_on`, `windowless`, `spaces_of` |
+| `Permissions` | accessibility granted, screen recording granted | the poll until accessibility is granted; emits `Granted` | `request(permission)`, `open_settings`, `refresh` |
+| `Appearance` | accent colour, reduce motion | refreshed on the system's appearance notification | none; read only |
+| `Clearing` | nothing | the timer that narrows windows off the strips | none |
+| `Settings` | launch at login | nothing | `set_launches_at_login` |
+
+`Desktop`'s queries are unit-tested where their logic is pure, such as the ordering; the rest asks macOS and is exercised by running the app. `relocate.rs` becomes `Desktop::move_to_space`, `overlap.rs` the `Clearing` entity, `watch.rs` the glue that routes each `Change` to the entity it concerns, `Change::Appearance` going to `Appearance` rather than through `Desktop`.
+
+The interface then shrinks to presentation: `theme.rs` reads `Appearance`; the menus describe entries and call `Desktop` methods; the panel keeps only its own view state.
+
+## Room for what comes next
+
+**Window preview on hover.** A `Previews` entity in `edged-core` keeps an image per window with when it was taken, and `request(window)` asks `edged-macos` for a capture, which returns on a later turn through `post` and notifies. The interface adds a `Preview` window, opened through the windowing owner the panels already use: non-activating, next to the hovered row, showing the image, closed when the pointer leaves. Capturing needs Screen Recording, which is why `Permissions` tracks it from the start; the original app asked for it too. One framework need appears here: an `Image` from raw pixels or an `IOSurface`, so a capture is shown without a PNG round trip. Flutter has `decodeImageFromPixels`; that is the shape to give Inset when the feature is built.
+
+**Grab-and-move.** `edged-macos` gains an event tap that reports pointer moves, buttons and the held modifier, which Accessibility already permits, and `Window` gains `set_position` beside `set_size`. A `Grab` entity in `edged-core` is the state machine: idle, modifier held, moving a window by the pointer's delta, resizing it from the edge or corner nearest where the drag began, with an excluded-applications list; it emits `Moving { window, frame }` while a drag is on. The interface adds an overlay window that shows the geometry when that setting is on. Nothing in the panel changes, because the panel never knew how windows move.
+
+Both features add an entity and a window; neither touches the panel's code or the rules above. That is the test of the split.
+
+## What a logic crate depends on
+
+`edged-core` depends on `inset-foundation`, not on `inset`. The foundation is the entity system, the timers and the async door, and nothing else; `inset` would bring the widgets, the renderer and the host along, which a crate that never draws has no use for. An app crate depends on `inset` and sees the same types through it.
+
+## How it went
+
+The split landed in one pass: `edged-core` took `desktop.rs`, `watch.rs`, `overlap.rs` and `relocate.rs` from the interface, `Desktop` grew its own watcher and timers, `Permissions`, `Appearance`, `Settings` and `Clearing` became entities, and `Core::start` makes them all. The interface's files changed only where they had reached into logic; the design pass before it stayed as it was. What is left for Inset is a short "structuring an app" section in its README stating the rules above.

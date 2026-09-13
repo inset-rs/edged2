@@ -1,0 +1,33 @@
+[package]
+name = "edged"
+description = "The windows and applications of the desktop, on a panel at its edge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The app is the library; the binary calls its `main`. A macOS-only app links no dylib.
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "edged"
+path = "src/main.rs"
+
+[dependencies]
+edged-core.workspace = true
+edged-macos.workspace = true
+inset.workspace = true
+inset-winui.workspace = true
+
+[package.metadata.inset]
+identifier = "app.edged2"
+name = "Edged"
+icon = "assets/icon.png"
+
+[package.metadata.inset.macos]
+# No Dock tile and no menu bar: the panel is the whole interface.
+background_app = true
+
+[lints]
+workspace = true

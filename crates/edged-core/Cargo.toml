@@ -1,0 +1,14 @@
+[package]
+name = "edged-core"
+description = "Edged's logic as entities: the desktop, permissions, appearance and settings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+edged-macos.workspace = true
+inset-foundation.workspace = true
+
+[lints]
+workspace = true

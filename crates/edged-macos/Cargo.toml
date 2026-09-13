@@ -1,0 +1,24 @@
+[package]
+name = "edged-macos"
+description = "What macOS knows about the desktop: screens, Spaces, applications, windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Every fact this crate reports crosses into AppKit, the Accessibility API or
+# SkyLight, so it is the one crate in the workspace allowed to write `unsafe`.
+[lints.rust]
+unsafe_code = "allow"
+
+[dependencies]
+block2.workspace = true
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = ["block2", "NSRunningApplication", "NSWorkspace", "NSScreen", "NSImage", "NSBitmapImageRep", "NSImageRep", "NSApplication", "NSResponder", "NSGraphics", "NSColor", "NSColorSpace", "NSEvent", "NSAccessibility", "NSView", "NSWindow", "NSVisualEffectView", "NSGlassEffectView", "objc2-quartz-core"] }
+objc2-application-services = { workspace = true, features = ["AXActionConstants", "AXAttributeConstants", "AXError", "AXUIElement", "AXValue", "AXValueConstants", "AXNotificationConstants", "AXRoleConstants"] }
+objc2-core-foundation = { workspace = true, features = ["CFCGTypes", "CFRunLoop", "CFArray", "CFDictionary", "CFNumber", "CFString", "CFData", "CFURL", "CFUUID", "CFBase", "CFDate"] }
+objc2-core-graphics = { workspace = true, features = ["CGDirectDisplay", "CGEvent", "CGEventTypes", "CGError", "CGGeometry", "CGRemoteOperation", "CGWindow"] }
+objc2-foundation = { workspace = true, features = ["NSNotification", "NSOperation", "NSString", "NSArray", "NSDictionary", "NSValue", "NSGeometry", "NSURL", "NSObject", "NSError", "NSDistributedNotificationCenter"] }
+objc2-quartz-core = { workspace = true, features = ["CALayer"] }
+objc2-service-management = { workspace = true, features = ["SMAppService"] }
+raw-window-handle.workspace = true

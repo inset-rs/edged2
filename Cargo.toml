@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.dependencies]
+edged-core = { path = "crates/edged-core" }
+edged-macos = { path = "crates/edged-macos" }
+inset = { path = "../inset-rs/crates/inset" }
+inset-foundation = { path = "../inset-rs/crates/inset-foundation" }
+inset-winui = { path = "../inset-winui/crates/inset-winui" }
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-application-services = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
+objc2-foundation = "0.3"
+objc2-quartz-core = "0.3"
+raw-window-handle = "0.6"
+objc2-service-management = "0.3"
+
+# inset-winui names the published inset crates; these point them at the checkout.
+[patch.crates-io]
+inset = { path = "../inset-rs/crates/inset" }
+inset-animation = { path = "../inset-rs/crates/inset-animation" }
+inset-cupertino = { path = "../inset-rs/crates/inset-cupertino" }
+inset-embedder = { path = "../inset-rs/crates/inset-embedder" }
+inset-embedder-default = { path = "../inset-rs/crates/inset-embedder-default" }
+inset-embedder-web = { path = "../inset-rs/crates/inset-embedder-web" }
+inset-embedder-winit = { path = "../inset-rs/crates/inset-embedder-winit" }
+inset-foundation = { path = "../inset-rs/crates/inset-foundation" }
+inset-gestures = { path = "../inset-rs/crates/inset-gestures" }
+inset-macros = { path = "../inset-rs/crates/inset-macros" }
+inset-painting = { path = "../inset-rs/crates/inset-painting" }
+inset-physics = { path = "../inset-rs/crates/inset-physics" }
+inset-rendering = { path = "../inset-rs/crates/inset-rendering" }
+inset-scheduler = { path = "../inset-rs/crates/inset-scheduler" }
+inset-services = { path = "../inset-rs/crates/inset-services" }
+inset-shell = { path = "../inset-rs/crates/inset-shell" }
+inset-widgets = { path = "../inset-rs/crates/inset-widgets" }
+
+# valo 0.4.5 (see-through surfaces) is not published yet; drop these once it is.
+[patch.crates-io.valo]
+path = "../valo/crates/valo"
+[patch.crates-io.valo-codec]
+path = "../valo/crates/valo-codec"
+[patch.crates-io.valo-codec-apple]
+path = "../valo/crates/valo-codec-apple"
+[patch.crates-io.valo-codec-software]
+path = "../valo/crates/valo-codec-software"
+[patch.crates-io.valo-geometry]
+path = "../valo/crates/valo-geometry"
+[patch.crates-io.valo-system-fonts]
+path = "../valo/crates/valo-system-fonts"

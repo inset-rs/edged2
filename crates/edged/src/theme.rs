@@ -59,8 +59,6 @@ pub struct Palette {
     /// The row of the window being looked at, and that row under the pointer.
     pub focused: Color,
     pub focused_hover: Color,
-    /// The band behind the Space the screen is showing.
-    pub group: Color,
     pub badge: Color,
 }
 
@@ -77,7 +75,6 @@ impl Palette {
                 pressed: Color::from_argb(0x1A, 0x00, 0x00, 0x00),
                 focused: with_alpha(accent, 0x29),
                 focused_hover: with_alpha(accent, 0x42),
-                group: Color::from_argb(0x8C, 0xFF, 0xFF, 0xFF),
                 badge: Color::from_argb(0xFF, 0xFF, 0x3B, 0x30),
             },
             Brightness::Dark => Palette {
@@ -89,7 +86,6 @@ impl Palette {
                 pressed: Color::from_argb(0x24, 0xFF, 0xFF, 0xFF),
                 focused: with_alpha(accent, 0x3D),
                 focused_hover: with_alpha(accent, 0x57),
-                group: Color::from_argb(0x1A, 0xFF, 0xFF, 0xFF),
                 badge: Color::from_argb(0xFF, 0xFF, 0x45, 0x3A),
             },
         }
@@ -136,8 +132,8 @@ impl Motion {
 
     fn full() -> Motion {
         Motion {
-            slide_out: Duration::from_millis(160),
-            slide_in: Duration::from_millis(140),
+            slide_out: Duration::from_millis(100),
+            slide_in: Duration::from_millis(100),
             hover_on: Duration::from_millis(80),
             hover_off: Duration::from_millis(140),
             pressed: Duration::from_millis(50),

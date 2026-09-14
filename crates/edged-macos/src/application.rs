@@ -1,11 +1,13 @@
 //! The applications the user is running, as the Dock counts them.
 
+use objc2::AnyThread;
 use objc2::rc::Retained;
 use objc2_app_kit::{
     NSApplicationActivationOptions, NSApplicationActivationPolicy, NSBitmapImageFileType,
-    NSBitmapImageRep, NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration,
+    NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace, NSGraphicsContext,
+    NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
-use objc2_foundation::{NSDictionary, NSSize};
+use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize};
 
 /// One running application.
 ///
@@ -74,17 +76,27 @@ impl Application {
         self.handle.isTerminated()
     }
 
-    /// The application's icon as PNG bytes at `size` points square.
+    /// The application's icon as PNG bytes, `pixels` square.
     ///
-    /// `NSImage` is resolution-independent; drawing it into a bitmap of a known
-    /// size is what turns it into pixels a renderer can upload.
-    pub fn icon_png(&self, size: f64) -> Option<Vec<u8>> {
+    /// An `NSImage` carries every size the icon was made in, up to a thousand
+    /// pixels; the icon is drawn into a bitmap of the size asked for, so the
+    /// pixels handed on are the ones that will be shown, and no more.
+    pub fn icon_png(&self, pixels: usize) -> Option<Vec<u8>> {
         let icon = self.handle.icon()?;
-        icon.setSize(NSSize::new(size, size));
-        let tiff = icon.TIFFRepresentation()?;
-        let representation = NSBitmapImageRep::imageRepWithData(&tiff)?;
+        let bitmap = rgba_bitmap(pixels)?;
+        let context = NSGraphicsContext::graphicsContextWithBitmapImageRep(&bitmap)?;
+        let side = pixels as f64;
+        NSGraphicsContext::saveGraphicsState_class();
+        NSGraphicsContext::setCurrentContext(Some(&context));
+        icon.drawInRect_fromRect_operation_fraction(
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(side, side)),
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0)),
+            NSCompositingOperation::Copy,
+            1.0,
+        );
+        NSGraphicsContext::restoreGraphicsState_class();
         let png = unsafe {
-            representation.representationUsingType_properties(
+            bitmap.representationUsingType_properties(
                 NSBitmapImageFileType::PNG,
                 &NSDictionary::new(),
             )
@@ -108,6 +120,28 @@ impl Application {
             is_hidden: handle.isHidden(),
             handle,
         }
+    }
+}
+
+/// An empty bitmap of `pixels` square, eight bits per channel with alpha, for AppKit to
+/// draw into.
+fn rgba_bitmap(pixels: usize) -> Option<Retained<NSBitmapImageRep>> {
+    // SAFETY: no planes are passed, so AppKit allocates the storage itself; the other
+    // arguments describe a plain 32-bit RGBA layout AppKit accepts.
+    unsafe {
+        NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            NSBitmapImageRep::alloc(),
+            std::ptr::null_mut(),
+            pixels as isize,
+            pixels as isize,
+            8,
+            4,
+            true,
+            false,
+            NSDeviceRGBColorSpace,
+            0,
+            0,
+        )
     }
 }
 

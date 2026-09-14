@@ -3,10 +3,10 @@
 use edged_core::Core;
 use inset::{App, BuildContext, IntoWidget, StatelessWidget, WidgetRef};
 
-use crate::windows::{PanelScreen, PanelWindows};
+use crate::windows::PanelWindows;
 
-/// Reads which screens there are and which show a full-screen window, and
-/// hands the panels the list; the read is what rebuilds this on any change.
+/// Reads which screens there are and hands the panels the list; the read is
+/// what rebuilds this when a screen comes or goes.
 #[derive(Debug)]
 pub struct Root {
     pub core: Core,
@@ -14,17 +14,7 @@ pub struct Root {
 
 impl StatelessWidget for Root {
     fn build(&self, app: &mut App, _context: BuildContext) -> WidgetRef {
-        let screens = {
-            let desktop = self.core.desktop.read(app);
-            desktop
-                .screens
-                .iter()
-                .map(|screen| PanelScreen {
-                    screen: screen.clone(),
-                    hidden: desktop.is_full_screen(screen),
-                })
-                .collect()
-        };
+        let screens = self.core.desktop.read(app).screens.clone();
         PanelWindows {
             core: self.core.clone(),
             screens,

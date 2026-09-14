@@ -27,7 +27,7 @@ use crate::permissions::{Granted, Permission, Permissions};
 
 /// The size an application icon is rasterised at, in pixels: twice the points
 /// it is drawn at, so it stays crisp on a Retina display.
-const ICON_PIXELS: f64 = 48.0;
+const ICON_PIXELS: usize = 48;
 /// How often the window server's list is compared with what the panel has,
 /// for whatever the notifications missed.
 const RECONCILE: Duration = Duration::from_secs(5);
@@ -36,6 +36,10 @@ const RECONCILE: Duration = Duration::from_secs(5);
 const BADGE_POLL: Duration = Duration::from_secs(5);
 /// How long one turn may spend reading applications.
 const SLICE: Duration = Duration::from_millis(8);
+/// A process whose listing took longer than this is busy or stuck; it is left
+/// alone for [`SLOW_REST`] rather than waited for again.
+const SLOW: Duration = Duration::from_millis(150);
+const SLOW_REST: Duration = Duration::from_secs(30);
 /// How long changes are gathered before they are applied together: a
 /// window being dragged reports a move for every frame.
 const GATHER: Duration = Duration::from_millis(50);
@@ -108,6 +112,12 @@ pub struct Desktop {
     watcher: Rc<RefCell<Watcher>>,
     jobs: VecDeque<Job>,
     scanning: Option<Timer>,
+    /// Windows the window server lists for a process that a whole walk did not
+    /// find: windows accessibility never shows, not to be walked for again
+    /// until the process's list changes.
+    unresolved: HashMap<i32, HashSet<WindowId>>,
+    /// Processes that answered late, and when they may be asked again.
+    slow: HashMap<i32, Instant>,
     gathered: HashSet<Change>,
     gathering: Option<Timer>,
     reconciling: Option<Timer>,
@@ -140,6 +150,8 @@ impl Desktop {
             watcher,
             jobs: VecDeque::new(),
             scanning: None,
+            unresolved: HashMap::new(),
+            slow: HashMap::new(),
             gathered: HashSet::new(),
             gathering: None,
             reconciling: None,
@@ -326,10 +338,21 @@ impl Desktop {
             .flat_map(|entry| entry.windows.iter().map(move |window| (entry, window)))
             .filter(|(_, window)| window.spaces.contains(&space))
             .collect();
-        windows.sort_by(|(_, left), (_, right)| {
-            title_order((&left.title, left.id), (&right.title, right.id))
+        windows.sort_by(|(left_entry, left), (right_entry, right)| {
+            window_order(
+                (&left_entry.application.name, &left.title, left.id),
+                (&right_entry.application.name, &right.title, right.id),
+            )
         });
         windows
+    }
+
+    /// A window by its id, whichever application it belongs to.
+    pub fn window(&self, id: WindowId) -> Option<&Window> {
+        self.applications
+            .iter()
+            .flat_map(|entry| entry.windows.iter())
+            .find(|window| window.id == id)
     }
 
     /// Whether a Space is the one its display is showing.
@@ -348,6 +371,13 @@ impl Desktop {
     pub fn is_full_screen(&self, screen: &Screen) -> bool {
         self.showing_on(screen)
             .is_some_and(|space| space.kind == SpaceKind::Fullscreen)
+    }
+
+    /// The screen a point is on.
+    pub fn screen_at(&self, (x, y): (f64, f64)) -> Option<&Screen> {
+        self.screens
+            .iter()
+            .find(|screen| screen.frame.contains(x, y))
     }
 
     /// The screen a window's centre is on.
@@ -409,7 +439,18 @@ impl Desktop {
         while let Some(job) = self.jobs.pop_front() {
             match job {
                 Job::List { pid, expected } => {
+                    if self
+                        .slow
+                        .get(&pid)
+                        .is_some_and(|until| Instant::now() < *until)
+                    {
+                        continue;
+                    }
+                    let asked = Instant::now();
                     self.list_windows(pid, expected);
+                    if asked.elapsed() > SLOW {
+                        self.slow.insert(pid, Instant::now() + SLOW_REST);
+                    }
                     changed = true;
                 }
                 Job::Walk {
@@ -419,14 +460,27 @@ impl Desktop {
                 } => {
                     let budget = SLICE.saturating_sub(started.elapsed());
                     let (found, done) = edged_macos::walk_step(pid, &mut cursor, budget);
+                    let found: Vec<Window> = found
+                        .into_iter()
+                        .filter(|window| expected.contains(&window.id))
+                        .collect();
                     if !found.is_empty() {
                         self.add_windows(pid, found);
                         changed = true;
                     }
-                    let accounted = self
+                    let known = self
                         .entry(pid)
-                        .is_some_and(|entry| expected.is_subset(&entry.window_ids()));
-                    if !done && !accounted {
+                        .map(AppEntry::window_ids)
+                        .unwrap_or_default();
+                    if expected.is_subset(&known) {
+                        self.unresolved.remove(&pid);
+                    } else if done {
+                        // Walked to the end and still missing: the window server lists
+                        // what accessibility does not show, and asking again would find
+                        // no more until the list changes.
+                        self.unresolved
+                            .insert(pid, expected.difference(&known).copied().collect());
+                    } else {
                         self.jobs.push_front(Job::Walk {
                             pid,
                             expected,
@@ -462,8 +516,19 @@ impl Desktop {
     /// list leaves out as long as the window server still holds them, and
     /// queues a walk for whatever is still unaccounted for.
     fn list_windows(&mut self, pid: i32, expected: HashSet<WindowId>) {
-        let listed = edged_macos::listed_windows(pid);
         let trusted = edged_macos::is_trusted();
+        let Some(entry) = self.entry(pid) else {
+            return;
+        };
+        // The window server's list is the judge of what is a window: accessibility
+        // also reports the ones an application keeps ordered out. Only a hidden
+        // application's windows are taken on accessibility's word, since the server
+        // has none of them while the application is hidden.
+        let hidden = entry.application.is_hidden;
+        let listed: Vec<Window> = edged_macos::listed_windows(pid)
+            .into_iter()
+            .filter(|window| hidden || expected.contains(&window.id))
+            .collect();
         let Some(entry) = self.entry_mut(pid) else {
             return;
         };
@@ -482,7 +547,12 @@ impl Desktop {
             .jobs
             .iter()
             .any(|job| matches!(job, Job::Walk { pid: walked, .. } if *walked == pid));
-        if trusted && !walking && !expected.is_subset(&known) {
+        let missing: HashSet<WindowId> = expected.difference(&known).copied().collect();
+        let worth_walking = self
+            .unresolved
+            .get(&pid)
+            .is_none_or(|unresolved| !missing.is_subset(unresolved));
+        if trusted && !walking && !missing.is_empty() && worth_walking {
             self.jobs.push_back(Job::Walk {
                 pid,
                 expected,
@@ -562,6 +632,9 @@ impl Desktop {
                 }
             })
             .collect();
+        let living = self.pids();
+        self.unresolved.retain(|pid, _| living.contains(pid));
+        self.slow.retain(|pid, _| living.contains(pid));
         for pid in arrived {
             self.jobs.push_back(Job::List {
                 pid,
@@ -588,7 +661,16 @@ impl Desktop {
                 Job::List { pid: p, .. } | Job::Walk { pid: p, .. } => *p == pid,
                 Job::Icon(_) => false,
             });
-            if !queued && !want.is_subset(&entry.window_ids()) {
+            let known = entry.window_ids();
+            let missing: HashSet<WindowId> = want.difference(&known).copied().collect();
+            // A window the server no longer lists was ordered out or closed without
+            // a word; the list is read again to drop it.
+            let stale = !entry.application.is_hidden && !known.is_subset(want);
+            let settled = self
+                .unresolved
+                .get(&pid)
+                .is_some_and(|unresolved| missing.is_subset(unresolved));
+            if !queued && (stale || (!missing.is_empty() && !settled)) {
                 self.jobs.push_back(Job::List {
                     pid,
                     expected: want.clone(),
@@ -748,6 +830,15 @@ fn watcher_for(this: WeakEntity<Desktop>, async_app: AsyncApp) -> Rc<RefCell<Wat
 }
 
 /// Windows by title, case aside, and by id when the titles agree.
+/// Windows by application, then by title within one, so an application's windows sit
+/// together whatever they are called.
+fn window_order(left: (&str, &str, WindowId), right: (&str, &str, WindowId)) -> Ordering {
+    left.0
+        .to_lowercase()
+        .cmp(&right.0.to_lowercase())
+        .then_with(|| title_order((left.1, left.2), (right.1, right.2)))
+}
+
 fn title_order(left: (&str, WindowId), right: (&str, WindowId)) -> Ordering {
     left.0
         .to_lowercase()
@@ -777,6 +868,18 @@ fn badge_of(application: &Application, badges: &HashMap<String, String>) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_order_by_application_before_title() {
+        assert_eq!(
+            window_order(("Safari", "Apple", 1), ("Finder", "Zebra", 2)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            window_order(("finder", "b", 1), ("Finder", "a", 2)),
+            Ordering::Greater
+        );
+    }
 
     #[test]
     fn windows_order_by_title_whatever_their_case_and_by_id_when_titled_alike() {

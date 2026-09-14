@@ -4,7 +4,7 @@
 //! whoever asked with the app still in hand. Every choice is a method of an
 //! entity; the menu itself decides nothing.
 
-use edged_core::{Core, Desktop};
+use edged_core::{Core, Desktop, Permission};
 use edged_macos::{Application, Window};
 use inset::{App, Entity, PopupMenuEntry};
 
@@ -138,6 +138,23 @@ pub fn edged_menu(app: &mut App, core: &Core) {
     menu.item("Refresh", {
         let desktop = core.desktop.clone();
         move |app| desktop.update(app, |desktop, cx| desktop.refresh(cx))
+    });
+    if !core.permissions.read(app).screen_recording {
+        menu.separator();
+        // A picture of a window needs screen recording access; the item asks for it.
+        menu.item("Show Window Previews…", {
+            let permissions = core.permissions.clone();
+            move |app| {
+                permissions.update(app, |permissions, cx| {
+                    permissions.request(cx, Permission::ScreenRecording)
+                })
+            }
+        });
+    }
+    menu.separator();
+    menu.item("Settings…", {
+        let settings = core.settings.clone();
+        move |app| settings.update(app, |settings, cx| settings.request_window(cx))
     });
     menu.separator();
     menu.item("Quit Edged", |_app| std::process::exit(0));

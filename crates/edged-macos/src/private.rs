@@ -6,6 +6,7 @@
 //! across releases and is what every window manager on the platform uses; each
 //! is declared here with the framework it comes from.
 
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
@@ -60,6 +61,17 @@ unsafe extern "C" {
     /// `SkyLight`, private: the Spaces each of `windows` appears on.
     fn CGSCopySpacesForWindows(connection: i32, selector: u32, windows: &CFArray) -> *mut CFArray;
 
+    /// `SkyLight`, private: the windows ordered in on the given Spaces. A window an
+    /// application has ordered out is not among them, whatever Space it was last on.
+    fn CGSCopyWindowsWithOptionsAndTags(
+        connection: i32,
+        owner: u32,
+        spaces: &CFArray,
+        options: u32,
+        set_tags: *mut u64,
+        clear_tags: *mut u64,
+    ) -> *mut CFArray;
+
     /// `SkyLight`, private: a window's level; normal windows sit at 0.
     fn CGSGetWindowLevel(connection: i32, window: WindowId, level: *mut i32) -> i32;
 
@@ -88,6 +100,8 @@ unsafe extern "C" {
 
 /// `kCGSAllSpacesMask`: every Space, not only the visible ones.
 const ALL_SPACES: u32 = 7;
+/// Counts minimized windows among a Space's windows, as the Dock does.
+const MINIMIZED_TOO: u32 = 2;
 /// `SLPSMode.userGenerated`
 const USER_GENERATED: u32 = 0x200;
 
@@ -155,6 +169,38 @@ pub fn spaces_for_windows(windows: &[WindowId]) -> Vec<SpaceId> {
     (0..spaces.count())
         .filter_map(|index| number_at(&spaces, index))
         .map(|value| value as SpaceId)
+        .collect()
+}
+
+/// The windows ordered in on any of `spaces`, minimized ones included: what a person
+/// could switch to. A window its application keeps ordered out, as a mail client keeps
+/// its closed main window, stays assigned to its last Space but is not here.
+pub fn windows_in_spaces(spaces: &[SpaceId]) -> HashSet<WindowId> {
+    let numbers: Vec<CFRetained<CFNumber>> = spaces
+        .iter()
+        .map(|id| CFNumber::new_i64(*id as i64))
+        .collect();
+    let Some(array) = array_of(&numbers) else {
+        return HashSet::new();
+    };
+    let (mut set_tags, mut clear_tags) = (0u64, 0u64);
+    let windows = unsafe {
+        CGSCopyWindowsWithOptionsAndTags(
+            connection(),
+            0,
+            &array,
+            MINIMIZED_TOO,
+            &mut set_tags,
+            &mut clear_tags,
+        )
+    };
+    let Some(windows) = NonNull::new(windows) else {
+        return HashSet::new();
+    };
+    let windows = unsafe { CFRetained::from_raw(windows) };
+    (0..windows.count())
+        .filter_map(|index| number_at(&windows, index))
+        .map(|value| value as WindowId)
         .collect()
 }
 

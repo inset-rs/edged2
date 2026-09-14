@@ -27,6 +27,16 @@ use raw_window_handle::RawWindowHandle;
 /// `corner_radius` on the side away from the screen's edge. Returns false
 /// when the handle is not a live AppKit view.
 pub fn install_backdrop(handle: RawWindowHandle, corner_radius: f64) -> bool {
+    install(handle, corner_radius, corner_radius)
+}
+
+/// The same, rounded by `corner_radius` at every corner and no wider than
+/// the window: for a window that stands free of any edge.
+pub fn install_rounded_backdrop(handle: RawWindowHandle, corner_radius: f64) -> bool {
+    install(handle, corner_radius, 0.0)
+}
+
+fn install(handle: RawWindowHandle, corner_radius: f64, past_trailing_edge: f64) -> bool {
     let RawWindowHandle::AppKit(appkit) = handle else {
         return false;
     };
@@ -48,7 +58,7 @@ pub fn install_backdrop(handle: RawWindowHandle, corner_radius: f64) -> bool {
     let frame = content.frame();
     let frame = NSRect::new(
         frame.origin,
-        NSSize::new(frame.size.width + corner_radius, frame.size.height),
+        NSSize::new(frame.size.width + past_trailing_edge, frame.size.height),
     );
     let backdrop = backdrop_view(mtm, frame, corner_radius);
     backdrop.setAutoresizingMask(

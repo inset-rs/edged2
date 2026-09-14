@@ -46,7 +46,9 @@ impl StatelessWidget for PermissionView {
                         Button::text(
                             "Grant access",
                             Listener::new(move |app: &mut App| {
-                                grant.read(app).request(Permission::Accessibility)
+                                grant.update(app, |permissions, cx| {
+                                    permissions.request(cx, Permission::Accessibility)
+                                })
                             }),
                         )
                         .style(ButtonStyle::Accent)

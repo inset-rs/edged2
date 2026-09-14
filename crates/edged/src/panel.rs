@@ -11,6 +11,11 @@
 //! The pointer's arrival comes from the window; its leaving is watched for
 //! while the panel is out, because a window's own enter and exit events go
 //! astray while it is resizing under a still pointer.
+//!
+//! While a full-screen window owns the screen the panel is tucked: a hair
+//! wide, invisible, inside the edge. A window that shows nothing hears no
+//! pointer, so the edge is watched for it instead, and the panel comes out
+//! from there as it does from the strip.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -49,11 +54,17 @@ const AWAY_LOOKS: u32 = 2;
 /// Room around the window the pointer still counts as on it: the pointer
 /// stops a point short of the screen's edge.
 const POINTER_MARGIN: f64 = 1.0;
+/// The panel's width while a full-screen window owns the screen: a hair
+/// inside the edge, invisible, there only to be reached.
+const TUCK_WIDTH: f64 = 1.0;
+/// How far from the screen's edge the pointer counts as at it.
+const EDGE_ZONE: f64 = 1.0;
 
 /// The window a screen's panel lives in: bare, floating, on every Space, at
 /// the strip's width until the pointer reaches it. See-through, with no
 /// background of the host's: the panel puts its own glass behind it, shaped
-/// as it wants, through the window's native handle.
+/// as it wants, through the window's native handle. It keeps the system's
+/// shadow, which is also where the hairline around a window comes from.
 pub fn window_config(screen: &Screen) -> WindowConfig {
     let frame = frame_for(screen, STRIP_WIDTH, INITIAL_HEIGHT);
     WindowConfig {
@@ -62,12 +73,11 @@ pub fn window_config(screen: &Screen) -> WindowConfig {
         position: Some([frame.left, frame.top]),
         decorations: false,
         resizable: false,
-        transparent: true,
         level: WindowLevel::AlwaysOnTop,
         activating: false,
-        all_spaces: true,
+        all_desktops: true,
         background: WindowBackground::Transparent,
-        shadow: false,
+        shadow: true,
         visible: true,
     }
 }
@@ -94,8 +104,16 @@ fn is_on(frame: &Rect, x: f64, y: f64) -> bool {
         && y <= frame.bottom + POINTER_MARGIN
 }
 
-fn width_for(slid_out: bool) -> f64 {
-    if slid_out { PANEL_WIDTH } else { STRIP_WIDTH }
+/// Whether a point is at the screen's edge, level with the frame.
+fn is_at_edge(screen: &Screen, frame: &Rect, x: f64, y: f64) -> bool {
+    x >= screen.visible_frame.right() - EDGE_ZONE
+        && y >= frame.top - POINTER_MARGIN
+        && y <= frame.bottom + POINTER_MARGIN
+}
+
+/// The width the panel rests at: the strip, or a hair while tucked.
+fn resting_width(tucked: bool) -> f64 {
+    if tucked { TUCK_WIDTH } else { STRIP_WIDTH }
 }
 
 /// A slide the host animates, or none when there is no motion to show.
@@ -142,12 +160,16 @@ impl InheritedWidget for PanelGeometry {
 pub struct EdgePanel {
     pub core: Core,
     pub display_id: u32,
+    /// Whether the screen shows a full-screen window, which owns it whole
+    /// and has the panel keep out of sight.
+    pub tucked: bool,
 }
 
 impl std::fmt::Debug for EdgePanel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EdgePanel")
             .field("display_id", &self.display_id)
+            .field("tucked", &self.tucked)
             .finish_non_exhaustive()
     }
 }
@@ -158,10 +180,18 @@ pub struct EdgePanelState {
     display_id: u32,
     /// Whether the pointer is on the panel, which slides it out.
     expanded: bool,
+    /// Whether the panel rests a hair wide and invisible, for a full-screen
+    /// window; as the widget last said.
+    tucked: bool,
+    /// Whether the first build is done, after which the window can be reached.
+    placed: bool,
     /// What the content last measured, which is the window's height.
     content_height: f64,
-    /// The look for the pointer that runs while the panel is out.
+    /// The look for the pointer: for its leaving while the panel is out, for
+    /// its reaching the edge while the panel is tucked.
     watching: Option<Timer>,
+    /// The moment a tucked panel that slid back in goes invisible.
+    hiding: Option<Timer>,
     /// How many looks in a row have missed the pointer.
     away: u32,
 }
@@ -175,8 +205,11 @@ impl StatefulWidget for EdgePanel {
             core: self.core.clone(),
             display_id: self.display_id,
             expanded: false,
+            tucked: self.tucked,
+            placed: false,
             content_height: INITIAL_HEIGHT,
             watching: None,
+            hiding: None,
             away: 0,
         }
     }
@@ -186,8 +219,44 @@ impl State for EdgePanelState {
     type Widget = EdgePanel;
     inset::state_accessors!();
 
+    /// The window is reachable from here on; a panel born under a full-screen
+    /// window tucks at once.
+    fn did_change_dependencies(self: Handle<Self>, app: &mut App) {
+        if app.get(self).placed {
+            return;
+        }
+        app.get_mut(self).placed = true;
+        if app.get(self).tucked
+            && let Some((window, screen)) = window_and_screen(self, app)
+        {
+            tuck(self, app, &window, &screen);
+        }
+    }
+
+    fn did_update_widget(self: Handle<Self>, app: &mut App, old_widget: &EdgePanel) {
+        let tucked = self.widget(app).tucked;
+        if tucked == old_widget.tucked {
+            return;
+        }
+        app.get_mut(self).tucked = tucked;
+        let Some((window, screen)) = window_and_screen(self, app) else {
+            return;
+        };
+        if tucked {
+            tuck(self, app, &window, &screen);
+        } else {
+            untuck(self, app, &window, &screen);
+        }
+    }
+
     fn dispose(self: Handle<Self>, app: &mut App) {
-        if let Some(timer) = app.get_mut(self).watching.take() {
+        for timer in [
+            app.get_mut(self).watching.take(),
+            app.get_mut(self).hiding.take(),
+        ]
+        .into_iter()
+        .flatten()
+        {
             timer.cancel(app);
         }
     }
@@ -220,6 +289,16 @@ impl State for EdgePanelState {
             let (window, screen) = (Rc::clone(&window), screen.clone());
             Rc::new(move |app: &mut App, _event| slide_out(this, app, &window, &screen))
         };
+        // An exit is believed only where the pointer has left in truth: the
+        // window sends one for its own resizing under a still pointer too.
+        let exit = {
+            let (window, screen) = (Rc::clone(&window), screen.clone());
+            Rc::new(move |app: &mut App, _event| {
+                if app.get(this).expanded && !pointer_on_panel(this, app, &screen) {
+                    slide_in(this, app, &window, &screen);
+                }
+            })
+        };
         let measured: SizeChangedCallback = {
             let (window, screen) = (Rc::clone(&window), screen.clone());
             Rc::new(move |app: &mut App, _was: Size, now: Size| {
@@ -228,9 +307,28 @@ impl State for EdgePanelState {
         };
         MouseRegion::new()
             .on_enter(enter)
+            .on_exit(exit)
             .child(body(content, height_cap(&screen), measured))
             .into_widget()
     }
+}
+
+/// The panel's window and screen, once it is in a window and its screen is known.
+fn window_and_screen(this: Handle<EdgePanelState>, app: &mut App) -> Option<(WindowRef, Screen)> {
+    let context = this.context(app);
+    let window = WindowScope::maybe_of(app, context)?;
+    let (core, display_id) = {
+        let state = app.get(this);
+        (state.core.clone(), state.display_id)
+    };
+    let screen = core.desktop.read(app).screen(display_id).cloned()?;
+    Some((window, screen))
+}
+
+/// Whether the pointer is on the panel at its full width.
+fn pointer_on_panel(this: Handle<EdgePanelState>, app: &App, screen: &Screen) -> bool {
+    let frame = frame_for(screen, PANEL_WIDTH, app.get(this).content_height);
+    edged_macos::pointer_location().is_some_and(|(x, y)| is_on(&frame, x, y))
 }
 
 /// The content laid out at full width and its own height whatever the window
@@ -280,8 +378,15 @@ fn follow_height(
         return;
     }
     app.get_mut(this).content_height = height;
-    let slid_out = app.get(this).expanded || !trusted;
-    window.set_frame(frame_for(screen, width_for(slid_out), height), None);
+    let width = {
+        let state = app.get(this);
+        if state.expanded || !trusted {
+            PANEL_WIDTH
+        } else {
+            resting_width(state.tucked)
+        }
+    };
+    window.set_frame(frame_for(screen, width, height), None);
 }
 
 /// Slides the panel out and starts looking for the pointer to leave.
@@ -289,10 +394,16 @@ fn slide_out(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, sc
     if app.get(this).expanded {
         return;
     }
+    if let Some(timer) = app.get_mut(this).hiding.take() {
+        timer.cancel(app);
+    }
     this.set_state(app, |state| {
         state.expanded = true;
         state.away = 0;
     });
+    if app.get(this).tucked {
+        set_visible(window, true);
+    }
     let height = app.get(this).content_height;
     window.set_frame(
         frame_for(screen, PANEL_WIDTH, height),
@@ -316,9 +427,7 @@ fn look_for_pointer(
             if !app.get(this).expanded {
                 return;
             }
-            let height = app.get(this).content_height;
-            let frame = frame_for(&screen, PANEL_WIDTH, height);
-            let found = edged_macos::pointer_location().is_some_and(|(x, y)| is_on(&frame, x, y));
+            let found = pointer_on_panel(this, app, &screen);
             let away = if found { 0 } else { app.get(this).away + 1 };
             app.get_mut(this).away = away;
             if away >= AWAY_LOOKS {
@@ -331,10 +440,14 @@ fn look_for_pointer(
     app.get_mut(this).watching = Some(timer);
 }
 
-/// Slides the panel in, unless access is still to be granted, when it stays out.
+/// Slides the panel in, unless access is still to be granted, when it stays
+/// out. A tucked panel slides in to a hair and then goes invisible, and the
+/// edge is watched for the pointer again.
 fn slide_in(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, screen: &Screen) {
-    let permissions = app.get(this).core.permissions.clone();
-    let trusted = permissions.read(app).accessibility;
+    let core = app.get(this).core.clone();
+    let trusted = core.permissions.read(app).accessibility;
+    core.previews
+        .update(app, |previews, cx| previews.dismiss(cx));
     this.set_state(app, |state| {
         state.expanded = false;
         state.watching = None;
@@ -342,11 +455,114 @@ fn slide_in(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, scr
     if !trusted {
         return;
     }
+    let tucked = app.get(this).tucked;
+    let height = app.get(this).content_height;
+    let duration = motion_of(this, app).slide_in;
+    window.set_frame(
+        frame_for(screen, resting_width(tucked), height),
+        slide(duration),
+    );
+    if tucked {
+        hide_after(this, app, Rc::clone(window), screen.clone(), duration);
+    }
+}
+
+/// Tucks the panel for a full-screen window: in to a hair, then invisible,
+/// with the edge watched for the pointer. A panel that is out tucks once it
+/// slides in; one waiting for access stays out.
+fn tuck(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, screen: &Screen) {
+    let trusted = app.get(this).core.permissions.read(app).accessibility;
+    if app.get(this).expanded || !trusted {
+        return;
+    }
+    let height = app.get(this).content_height;
+    let duration = motion_of(this, app).slide_in;
+    window.set_frame(frame_for(screen, TUCK_WIDTH, height), slide(duration));
+    hide_after(this, app, Rc::clone(window), screen.clone(), duration);
+}
+
+/// Brings a tucked panel back to the strip, where the pointer reaches it on
+/// its own.
+fn untuck(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, screen: &Screen) {
+    for timer in [
+        app.get_mut(this).hiding.take(),
+        (!app.get(this).expanded)
+            .then(|| app.get_mut(this).watching.take())
+            .flatten(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        timer.cancel(app);
+    }
+    set_visible(window, true);
+    let trusted = app.get(this).core.permissions.read(app).accessibility;
+    if app.get(this).expanded || !trusted {
+        return;
+    }
     let height = app.get(this).content_height;
     window.set_frame(
         frame_for(screen, STRIP_WIDTH, height),
         slide(motion_of(this, app).slide_in),
     );
+}
+
+/// Once a slide in has ended, makes the tucked panel invisible and starts
+/// watching the edge for the pointer.
+fn hide_after(
+    this: Handle<EdgePanelState>,
+    app: &mut App,
+    window: WindowRef,
+    screen: Screen,
+    duration: Duration,
+) {
+    let timer = Timer::new(
+        app,
+        duration,
+        Listener::new(move |app: &mut App| {
+            app.get_mut(this).hiding = None;
+            let state = app.get(this);
+            if state.expanded || !state.tucked {
+                return;
+            }
+            set_visible(&window, false);
+            watch_edge(this, app, Rc::clone(&window), screen.clone());
+        }),
+    );
+    app.get_mut(this).hiding = Some(timer);
+}
+
+/// Looks for the pointer at the screen's edge, level with the panel, and
+/// slides the panel out when it is there; the only way a panel that shows
+/// nothing can be reached.
+fn watch_edge(this: Handle<EdgePanelState>, app: &mut App, window: WindowRef, screen: Screen) {
+    let timer = Timer::new(
+        app,
+        POINTER_POLL,
+        Listener::new(move |app: &mut App| {
+            let state = app.get(this);
+            if state.expanded || !state.tucked {
+                return;
+            }
+            let frame = frame_for(&screen, PANEL_WIDTH, state.content_height);
+            let reached = edged_macos::pointer_location()
+                .is_some_and(|(x, y)| is_at_edge(&screen, &frame, x, y));
+            if reached {
+                slide_out(this, app, &window, &screen);
+            } else {
+                watch_edge(this, app, Rc::clone(&window), screen.clone());
+            }
+        }),
+    );
+    app.get_mut(this).watching = Some(timer);
+}
+
+/// Shows or hides the window where it is, without the host's `show`, which
+/// would activate the application.
+fn set_visible(window: &WindowRef, visible: bool) {
+    if let Some(handle) = window.native_handle() {
+        edged_macos::set_alpha(handle, if visible { 1.0 } else { 0.0 });
+    }
 }
 
 /// The motion the system allows now.
@@ -370,17 +586,24 @@ fn content(app: &mut App, core: &Core, screen: &Screen, design: Design) -> Widge
             children.push(rows::application_row(desktop, entry, design));
         }
         for space in model.spaces_of(screen) {
+            let showing = model.is_showing(space);
             let rows: Vec<WidgetRef> = model
                 .windows_on(space.id)
                 .into_iter()
-                .map(|(entry, window)| rows::window_row(desktop, entry, window, design))
+                .map(|(entry, window)| {
+                    rows::window_row(
+                        desktop,
+                        &core.previews,
+                        entry,
+                        window,
+                        showing,
+                        screen.scale,
+                        design,
+                    )
+                })
                 .collect();
             children.push(sections::space_section(
-                desktop,
-                space,
-                model.is_showing(space),
-                rows,
-                design,
+                desktop, space, showing, rows, design,
             ));
         }
     }
@@ -395,6 +618,8 @@ fn content(app: &mut App, core: &Core, screen: &Screen, design: Design) -> Widge
 
 #[cfg(test)]
 mod tests {
+    use edged_macos::Frame;
+
     use super::*;
 
     #[test]
@@ -404,5 +629,31 @@ mod tests {
         assert!(is_on(&frame, 1412.0, 99.5));
         assert!(!is_on(&frame, 1410.0, 300.0));
         assert!(!is_on(&frame, 1420.0, 502.0));
+    }
+
+    #[test]
+    fn the_edge_is_reached_only_level_with_the_panel() {
+        let screen = Screen {
+            display_id: 1,
+            uuid: String::new(),
+            frame: Frame {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 900.0,
+            },
+            visible_frame: Frame {
+                x: 0.0,
+                y: 25.0,
+                width: 1440.0,
+                height: 875.0,
+            },
+            scale: 2.0,
+            is_main: true,
+        };
+        let frame = frame_for(&screen, PANEL_WIDTH, 400.0);
+        assert!(is_at_edge(&screen, &frame, 1439.5, frame.top + 10.0));
+        assert!(!is_at_edge(&screen, &frame, 1430.0, frame.top + 10.0));
+        assert!(!is_at_edge(&screen, &frame, 1439.5, frame.bottom + 20.0));
     }
 }

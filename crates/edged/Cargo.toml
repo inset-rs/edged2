@@ -18,7 +18,11 @@ path = "src/main.rs"
 edged-core.workspace = true
 edged-macos.workspace = true
 inset.workspace = true
+# The preview names its host: the picture's buffer becomes a texture on the host's device.
+inset-embedder-winit.workspace = true
+inset-rendering.workspace = true
 inset-winui.workspace = true
+valo-codec-apple.workspace = true
 
 [package.metadata.inset]
 identifier = "app.edged2"

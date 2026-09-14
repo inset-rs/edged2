@@ -7,9 +7,13 @@
 mod menus;
 mod panel;
 mod permission;
+mod preview;
+mod ring;
 mod root;
 mod rows;
 mod sections;
+mod settings;
+mod target;
 mod theme;
 mod windows;
 

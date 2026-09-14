@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use objc2_core_foundation::{CFDictionary, CGPoint};
+use objc2_core_foundation::{CFBoolean, CFDictionary, CGPoint};
 use objc2_core_graphics::{
     CGEvent, CGEventTapLocation, CGEventType, CGMouseButton, CGWindowListCopyWindowInfo,
     CGWindowListOption, kCGNullWindowID,
@@ -86,6 +86,11 @@ impl Window {
     /// Resizes the window, keeping its origin.
     pub fn set_size(&self, width: f64, height: f64) {
         self.element.set_size(ax::SIZE, width, height);
+    }
+
+    /// Moves the window's top-left corner to a point in screen space, keeping its size.
+    pub fn set_position(&self, x: f64, y: f64) {
+        self.element.set_point(ax::POSITION, x, y);
     }
 
     /// The accessibility element, for observers.
@@ -201,9 +206,16 @@ pub fn walk_step(pid: i32, cursor: &mut u64, budget: Duration) -> (Vec<Window>, 
 }
 
 /// Every window the window server holds, on every Space, by the process
-/// that owns it: those at the normal level and of a size a person could
-/// use. One call, and no application is asked anything, so this is what
-/// says which processes have windows the accessibility list did not show.
+/// that owns it: those at the normal level, of a size a person could use,
+/// and on screen, on some Space or minimized. Two calls, and no application
+/// is asked anything, so this is what says which processes have windows the
+/// accessibility list did not show.
+///
+/// A window that is none of those is one its application ordered out and
+/// keeps for later, as a mail client keeps its closed main window; it stays
+/// assigned to the Space it was last on, so the Space alone would not tell
+/// it from a window on another desktop. The Dock leaves it out of the
+/// application's menu, and so does this.
 pub fn window_ids_by_process() -> HashMap<i32, HashSet<WindowId>> {
     let Some(list) = CGWindowListCopyWindowInfo(
         CGWindowListOption::OptionAll | CGWindowListOption::ExcludeDesktopElements,
@@ -211,6 +223,7 @@ pub fn window_ids_by_process() -> HashMap<i32, HashSet<WindowId>> {
     ) else {
         return HashMap::new();
     };
+    let ordered_in = ordered_in_windows();
     let mut by_process: HashMap<i32, HashSet<WindowId>> = HashMap::new();
     for index in 0..list.count() {
         let Some(info) =
@@ -225,6 +238,12 @@ pub fn window_ids_by_process() -> HashMap<i32, HashSet<WindowId>> {
         let (Some(pid), Some(id)) = (number("kCGWindowOwnerPID"), number("kCGWindowNumber")) else {
             continue;
         };
+        let on_screen = private::entry(info, "kCGWindowIsOnscreen")
+            .and_then(|v| v.downcast_ref::<CFBoolean>())
+            .is_some_and(CFBoolean::value);
+        if !on_screen && !ordered_in.contains(&(id as WindowId)) {
+            continue;
+        }
         let Some(bounds) =
             private::entry(info, "kCGWindowBounds").and_then(|v| v.downcast_ref::<CFDictionary>())
         else {
@@ -244,6 +263,46 @@ pub fn window_ids_by_process() -> HashMap<i32, HashSet<WindowId>> {
             .insert(id as WindowId);
     }
     by_process
+}
+
+/// The windows ordered in on any Space, minimized ones included.
+fn ordered_in_windows() -> HashSet<WindowId> {
+    let spaces: Vec<SpaceId> = crate::space::spaces()
+        .iter()
+        .map(|space| space.id)
+        .collect();
+    private::windows_in_spaces(&spaces)
+}
+
+/// The window under a point in screen space: the frontmost ordinary window of another
+/// application whose bounds hold the point, as the window server orders them. `None` over
+/// the desktop, a menu, or a window of this process.
+pub fn window_at((x, y): (f64, f64)) -> Option<WindowId> {
+    let list = CGWindowListCopyWindowInfo(
+        CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements,
+        kCGNullWindowID,
+    )?;
+    let own = std::process::id() as i64;
+    (0..list.count()).find_map(|index| {
+        let info =
+            private::value_at(&list, index).and_then(|v| v.downcast_ref::<CFDictionary>())?;
+        let number = |key: &str| private::entry(info, key).and_then(private::as_number);
+        if number("kCGWindowLayer") != Some(0) || number("kCGWindowOwnerPID") == Some(own) {
+            return None;
+        }
+        let bounds = private::entry(info, "kCGWindowBounds")
+            .and_then(|v| v.downcast_ref::<CFDictionary>())?;
+        let side = |key: &str| {
+            private::entry(bounds, key)
+                .and_then(private::as_number)
+                .unwrap_or(0) as f64
+        };
+        let (left, top, width, height) = (side("X"), side("Y"), side("Width"), side("Height"));
+        let inside = x >= left && x < left + width && y >= top && y < top + height;
+        (inside && width >= MIN_WIDTH && height >= MIN_HEIGHT)
+            .then(|| number("kCGWindowNumber").map(|id| id as WindowId))
+            .flatten()
+    })
 }
 
 /// Reads a window in one round trip, or nothing when the element is not a

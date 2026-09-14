@@ -25,6 +25,8 @@ pub struct Granted(pub Permission);
 pub struct Permissions {
     pub accessibility: bool,
     pub screen_recording: bool,
+    /// Permissions asked for and not yet granted, which the poll waits on.
+    asked: Vec<Permission>,
     poll: Option<Timer>,
 }
 
@@ -35,6 +37,7 @@ impl Permissions {
         let mut permissions = Permissions {
             accessibility: edged_macos::is_trusted(),
             screen_recording: edged_macos::has_screen_recording(),
+            asked: Vec::new(),
             poll: None,
         };
         permissions.schedule_poll(cx);
@@ -48,8 +51,9 @@ impl Permissions {
         }
     }
 
-    /// Puts macOS's own prompt on screen for the permission.
-    pub fn request(&self, permission: Permission) {
+    /// Puts macOS's own prompt on screen for the permission, and watches
+    /// for the grant.
+    pub fn request(&mut self, cx: &mut Context<Permissions>, permission: Permission) {
         match permission {
             Permission::Accessibility => {
                 edged_macos::request_trust();
@@ -57,6 +61,12 @@ impl Permissions {
             Permission::ScreenRecording => {
                 edged_macos::request_screen_recording();
             }
+        }
+        if !self.asked.contains(&permission) {
+            self.asked.push(permission);
+        }
+        if self.poll.is_none() {
+            self.schedule_poll(cx);
         }
     }
 
@@ -92,10 +102,12 @@ impl Permissions {
         }
     }
 
-    /// Asks again every second until accessibility access is granted, which
-    /// macOS notes for the running process a moment after the user grants it.
+    /// Asks again every second until accessibility access, and whatever else
+    /// was asked for, is granted: macOS notes a grant for the running process
+    /// a moment after the user gives it.
     fn schedule_poll(&mut self, cx: &mut Context<Permissions>) {
-        if self.accessibility {
+        let waiting = !self.accessibility || self.asked.iter().any(|p| !self.has(*p));
+        if !waiting {
             self.poll = None;
             return;
         }

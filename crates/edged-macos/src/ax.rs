@@ -62,8 +62,9 @@ pub const APPLICATION_DOCK_ITEM: &str = "AXApplicationDockItem";
 
 /// An accessibility element: an application, a window, or a Dock tile.
 /// How long one accessibility call may wait on an application, in seconds.
-/// Calls take a millisecond when the application is well.
-const MESSAGING_TIMEOUT: f32 = 0.5;
+/// Calls take a millisecond when the application is well; one that is busy
+/// answers late and is asked again later rather than waited for.
+const MESSAGING_TIMEOUT: f32 = 0.2;
 
 /// Bounds every accessibility call this process makes, whatever element it
 /// goes through, to [`MESSAGING_TIMEOUT`]: an application that has stopped
@@ -248,6 +249,17 @@ impl Element {
         let name = CFString::from_str(name);
         let value = CFBoolean::new(value);
         let _ = unsafe { AXUIElement::set_attribute_value(&self.0, &name, value) };
+    }
+
+    /// Sets a `CGPoint` attribute, the way a move does.
+    pub fn set_point(&self, name: &str, x: f64, y: f64) {
+        let mut point = CGPoint::new(x, y);
+        let slot = NonNull::from(&mut point).cast::<c_void>();
+        let Some(value) = (unsafe { AXValue::new(AXValueType::CGPoint, slot) }) else {
+            return;
+        };
+        let name = CFString::from_str(name);
+        let _ = unsafe { AXUIElement::set_attribute_value(&self.0, &name, &value) };
     }
 
     /// Sets a `CGSize` attribute, the way a resize does.

@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use edged_core::{Core, SettingsRequested};
-use edged_macos::Screen;
+use edged_macos::{Screen, Side};
 use inset::{
     App, Brightness, BuildContext, FrameCallback, Handle, IntoWidget, KeyRef, MediaQuery,
     PageRoute, PageRouteBuilder, Rect, RouteSettingsRef, SchedulerBinding, State, StateData,
@@ -22,7 +22,7 @@ use inset::{
 };
 use inset_winui::{AccentPalette, Theme, ThemeScope};
 
-use crate::panel::{self, EdgePanel};
+use crate::panel::{self, EdgePanel, Layout};
 use crate::preview::{self, PreviewContent};
 use crate::ring::{self, RingContent};
 use crate::settings::{self, SettingsHost};
@@ -32,11 +32,14 @@ use crate::target::{self, TargetContent};
 pub struct PanelWindows {
     pub core: Core,
     pub screens: Vec<Screen>,
+    /// The screen edge the panels sit at.
+    pub side: Side,
 }
 
-/// One screen's panel window.
+/// One screen's panel window, at one edge of it.
 struct Panel {
     display_id: u32,
+    side: Side,
     window: WindowRef,
 }
 
@@ -112,7 +115,8 @@ impl State for PanelWindowsState {
     }
 
     fn did_update_widget(self: Handle<Self>, app: &mut App, old_widget: &PanelWindows) {
-        if self.widget(app).screens != old_widget.screens {
+        let widget = self.widget(app);
+        if widget.screens != old_widget.screens || widget.side != old_widget.side {
             follow(self, app);
         }
     }
@@ -391,7 +395,7 @@ fn settings_config() -> WindowConfig {
         size: settings::WINDOW_SIZE,
         position: None,
         decorations: true,
-        resizable: false,
+        resizable: true,
         level: WindowLevel::Normal,
         activating: true,
         all_desktops: false,
@@ -488,21 +492,27 @@ fn self_core(this: Handle<PanelWindowsState>, app: &App) -> Core {
     this.widget(app).core.clone()
 }
 
-/// Brings the windows in line with the screens: closes the panels of screens
-/// that went, opens one for each new screen.
+/// Brings the windows in line with the screens and the edge: closes the panels
+/// of screens that went and those at the other edge, opens one for each
+/// screen without.
 fn follow(this: Handle<PanelWindowsState>, app: &mut App) {
-    let screens = this.widget(app).screens.clone();
-    close_gone(this, app, &screens);
-    open_new(this, app, &screens);
+    let (screens, side) = {
+        let widget = this.widget(app);
+        (widget.screens.clone(), widget.side)
+    };
+    close_gone(this, app, &screens, side);
+    open_new(this, app, &screens, side);
 }
 
-fn close_gone(this: Handle<PanelWindowsState>, app: &mut App, screens: &[Screen]) {
+fn close_gone(this: Handle<PanelWindowsState>, app: &mut App, screens: &[Screen], side: Side) {
     let gone: Vec<usize> = app
         .get(this)
         .panels
         .iter()
         .enumerate()
-        .filter(|(_, panel)| !screens.iter().any(|s| s.display_id == panel.display_id))
+        .filter(|(_, panel)| {
+            panel.side != side || !screens.iter().any(|s| s.display_id == panel.display_id)
+        })
         .map(|(index, _)| index)
         .collect();
     if gone.is_empty() {
@@ -515,7 +525,7 @@ fn close_gone(this: Handle<PanelWindowsState>, app: &mut App, screens: &[Screen]
     });
 }
 
-fn open_new(this: Handle<PanelWindowsState>, app: &mut App, screens: &[Screen]) {
+fn open_new(this: Handle<PanelWindowsState>, app: &mut App, screens: &[Screen], side: Side) {
     let Some(owner) = app.platform().windowing_owner() else {
         eprintln!("edged: this host opens no windows, so there is nowhere to put a panel");
         return;
@@ -529,13 +539,13 @@ fn open_new(this: Handle<PanelWindowsState>, app: &mut App, screens: &[Screen]) 
             continue;
         }
         app.get_mut(this).opening.insert(display_id);
-        let future = owner.create(panel::window_config(screen));
+        let future = owner.create(panel::window_config(screen, side));
         drop(app.spawn(async move |cx| {
             let opened = future.await;
             cx.update(|app| {
                 app.get_mut(this).opening.remove(&display_id);
                 match opened {
-                    Ok(window) => opened_for(this, app, display_id, window),
+                    Ok(window) => opened_for(this, app, display_id, side, window),
                     Err(error) => eprintln!("edged: panel window: {error}"),
                 }
             });
@@ -544,19 +554,31 @@ fn open_new(this: Handle<PanelWindowsState>, app: &mut App, screens: &[Screen]) 
 }
 
 /// Dresses a window the host just made and lists it.
-fn opened_for(this: Handle<PanelWindowsState>, app: &mut App, display_id: u32, window: WindowRef) {
+fn opened_for(
+    this: Handle<PanelWindowsState>,
+    app: &mut App,
+    display_id: u32,
+    side: Side,
+    window: WindowRef,
+) {
     // The panel has no close box; a close request is what a hotkey like ⌘W
     // would send, and the panel stays.
     window.set_close_requested(Some(Rc::new(|| {})));
     let dressed = window.native_handle().is_some_and(|handle| {
         // Above the preview, whichever of the two was shown last.
         edged_macos::raise_to_pop_up_level(handle);
-        edged_macos::install_backdrop(handle, panel::PANEL_RADIUS)
+        edged_macos::install_backdrop(handle, panel::PANEL_RADIUS, side)
     });
     if !dressed {
         eprintln!("edged: the panel window has no native view to put glass behind");
     }
-    this.set_state(app, |state| state.panels.push(Panel { display_id, window }));
+    this.set_state(app, |state| {
+        state.panels.push(Panel {
+            display_id,
+            side,
+            window,
+        })
+    });
 }
 
 /// Every window gets its own navigator and overlay, which the tooltips need,
@@ -596,12 +618,20 @@ impl StatelessWidget for PanelHost {
                 .screen(self.display_id)
                 .is_some_and(|screen| desktop.is_full_screen(screen))
         };
+        let layout = {
+            let settings = self.core.settings.read(app);
+            Layout {
+                side: settings.panel_side,
+                reveal: settings.panel_reveal,
+            }
+        };
         ThemeScope::new(
             theme,
             EdgePanel {
                 core: self.core.clone(),
                 display_id: self.display_id,
                 tucked,
+                layout,
             },
         )
         .into_widget()

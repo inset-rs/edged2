@@ -1,13 +1,13 @@
-//! The settings window: a pane of sections down the side, so that each
-//! feature to come has a place for its options, and the page of the section
-//! chosen. Every option is a setting on the `Settings` entity; the page only
-//! shows it and asks for the change.
+//! The settings window: a pane of sections down the side, one per feature, and the
+//! page of the section chosen. Every option is a setting on the `Settings` entity; the
+//! page only shows it and asks for the change.
 
-use edged_core::{Core, Direction, Key, PreviewTrigger, ResizeCorner, Settings, Zone};
+use edged_core::{Core, Direction, Key, PanelReveal, PreviewTrigger, ResizeCorner, Settings, Zone};
+use edged_macos::Side;
 use inset::{
     App, Brightness, BuildContext, Column, Context, CrossAxisAlignment, EdgeInsetsGeometry, Handle,
-    IntoWidget, Listener, MediaQuery, Padding, Row, SizedBox, State, StateData, StatefulWidget,
-    StatelessWidget, Text, WidgetRef,
+    IntoWidget, Listener, MediaQuery, Padding, Row, SingleChildScrollView, SizedBox, State,
+    StateData, StatefulWidget, StatelessWidget, Text, WidgetRef,
 };
 use inset_winui::{
     Button, FluentSymbol, FontIcon, NavigationView, NavigationViewItem,
@@ -16,14 +16,22 @@ use inset_winui::{
 
 use crate::menus::Menu;
 
-/// The size the settings window opens at.
-/// The width the chord rows' labels take, so the keys line up.
-const CHORD_LABEL_WIDTH: f64 = 90.0;
-
-pub const WINDOW_SIZE: [f64; 2] = [560.0, 380.0];
-const GENERAL: &str = "general";
+/// The size the settings window opens at; it can be made larger.
+pub const WINDOW_SIZE: [f64; 2] = [640.0, 520.0];
+/// The width the chord and direction rows' labels take, so the controls line up.
+const LABEL_WIDTH: f64 = 90.0;
 const PANE_WIDTH: f64 = 180.0;
 const PAGE_PADDING: f64 = 24.0;
+/// Between a section's title and its options, and between options.
+const TITLE_GAP: f64 = 12.0;
+const OPTION_GAP: f64 = 8.0;
+const CHOICE_GAP: f64 = 4.0;
+
+const GENERAL: &str = "general";
+const PANEL: &str = "panel";
+const PREVIEWS: &str = "previews";
+const HOLD: &str = "hold";
+const RING: &str = "ring";
 
 /// The settings under the theme scope the WinUI controls read.
 #[derive(Debug)]
@@ -77,12 +85,22 @@ impl State for SettingsPagesState {
         let section = app.get(self).section.clone();
         let page = match section.as_str() {
             GENERAL => general_page(app, &core),
+            PANEL => panel_page(app, &core),
+            PREVIEWS => previews_page(app, &core),
+            HOLD => hold_page(app, &core),
+            RING => ring_page(app, &core),
             _ => SizedBox::new().into_widget(),
+        };
+        let item = |id: &str, label: &str, symbol: FluentSymbol| {
+            NavigationViewItem::text(id, label).icon(FontIcon::symbol(symbol).font_size(16.0))
         };
         NavigationView::new(
             vec![
-                NavigationViewItem::text(GENERAL, "General")
-                    .icon(FontIcon::symbol(FluentSymbol::Settings).font_size(16.0)),
+                item(GENERAL, "General", FluentSymbol::Settings),
+                item(PANEL, "Panel", FluentSymbol::Navigation),
+                item(PREVIEWS, "Previews", FluentSymbol::Eye),
+                item(HOLD, "Move and resize", FluentSymbol::Layer),
+                item(RING, "Ring", FluentSymbol::Circle),
             ],
             Some(section),
             move |app, args| {
@@ -100,8 +118,101 @@ impl State for SettingsPagesState {
     }
 }
 
-/// When window previews show.
+/// A page: its sections top to bottom, scrolling when the window is shorter than they are.
+fn page(children: Vec<WidgetRef>) -> WidgetRef {
+    SingleChildScrollView::new()
+        .child(
+            Padding::new(EdgeInsetsGeometry::all(PAGE_PADDING)).child(
+                Column::new()
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .children(children),
+            ),
+        )
+        .into_widget()
+}
+
+fn title(text: &str) -> WidgetRef {
+    Text::new(text.to_owned()).into_widget()
+}
+
+fn gap(height: f64) -> WidgetRef {
+    SizedBox::new().height(height).into_widget()
+}
+
+/// A switch with what it turns on beside it.
+fn switch_row(on: bool, label: &str, set: impl Fn(&mut App, bool) + 'static) -> WidgetRef {
+    Row::new()
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .children(vec![
+            ToggleSwitch::new(on, set).into_widget(),
+            SizedBox::new().width(12.0).into_widget(),
+            Text::new(label.to_owned()).into_widget(),
+        ])
+        .into_widget()
+}
+
+/// Edged itself: whether it starts with the Mac.
 fn general_page(app: &mut App, core: &Core) -> WidgetRef {
+    let launches = core.settings.read(app).launches_at_login;
+    let settings = core.settings.clone();
+    page(vec![
+        title("Startup"),
+        gap(TITLE_GAP),
+        switch_row(launches, "Open Edged at login", move |app, on| {
+            settings.update(app, |settings, cx| {
+                if let Err(error) = settings.set_launches_at_login(cx, on) {
+                    eprintln!("launch at login: {error}");
+                }
+            });
+        }),
+    ])
+}
+
+/// Where the panel sits and how it comes out.
+fn panel_page(app: &mut App, core: &Core) -> WidgetRef {
+    let (side, reveal) = {
+        let settings = core.settings.read(app);
+        (settings.panel_side, settings.panel_reveal)
+    };
+    let side_choice = |wanted: Side, label: &str| {
+        let settings = core.settings.clone();
+        RadioButton::new(side == wanted, move |app: &mut App| {
+            settings.update(app, |settings, cx| settings.set_panel_side(cx, wanted));
+        })
+        .content(Text::new(label.to_owned()))
+        .into_widget()
+    };
+    let reveal_choice = |wanted: PanelReveal, label: &str| {
+        let settings = core.settings.clone();
+        RadioButton::new(reveal == wanted, move |app: &mut App| {
+            settings.update(app, |settings, cx| settings.set_panel_reveal(cx, wanted));
+        })
+        .content(Text::new(label.to_owned()))
+        .into_widget()
+    };
+    page(vec![
+        title("Edge of the screen"),
+        gap(TITLE_GAP),
+        side_choice(Side::Right, "Right"),
+        gap(CHOICE_GAP),
+        side_choice(Side::Left, "Left"),
+        gap(TITLE_GAP + OPTION_GAP),
+        title("When the pointer reaches it"),
+        gap(TITLE_GAP),
+        reveal_choice(
+            PanelReveal::Unfold,
+            "The titles unfold beside the icons, which stay at the edge",
+        ),
+        gap(CHOICE_GAP),
+        reveal_choice(
+            PanelReveal::Slide,
+            "The whole panel slides out, icons first",
+        ),
+    ])
+}
+
+/// When window previews show.
+fn previews_page(app: &mut App, core: &Core) -> WidgetRef {
     let trigger = core.settings.read(app).preview_trigger;
     let choice = |wanted: PreviewTrigger, label: &str| {
         let settings = core.settings.clone();
@@ -111,69 +222,83 @@ fn general_page(app: &mut App, core: &Core) -> WidgetRef {
         .content(Text::new(label.to_owned()))
         .into_widget()
     };
-    Padding::new(EdgeInsetsGeometry::all(PAGE_PADDING))
-        .child(
-            Column::new()
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .children(vec![
-                    Text::new("Window previews").into_widget(),
-                    SizedBox::new().height(12.0).into_widget(),
-                    choice(PreviewTrigger::Hover, "When the pointer rests on a window"),
-                    SizedBox::new().height(4.0).into_widget(),
-                    choice(PreviewTrigger::CommandKey, "Only while ⌘ is held"),
-                    SizedBox::new().height(24.0).into_widget(),
-                    Text::new("Move and resize windows").into_widget(),
-                    SizedBox::new().height(12.0).into_widget(),
-                    grab_switch(app, core),
-                    SizedBox::new().height(12.0).into_widget(),
-                    chord_row(app, core, "Move with", Chord::MOVE),
-                    SizedBox::new().height(8.0).into_widget(),
-                    chord_row(app, core, "Resize with", Chord::RESIZE),
-                    SizedBox::new().height(8.0).into_widget(),
-                    chord_row(app, core, "Arrange with", Chord::ARRANGE),
-                    SizedBox::new().height(12.0).into_widget(),
-                    corner_choice(
-                        app,
-                        core,
-                        ResizeCorner::BottomRight,
-                        "Resize from the bottom-right corner",
-                    ),
-                    SizedBox::new().height(4.0).into_widget(),
-                    corner_choice(
-                        app,
-                        core,
-                        ResizeCorner::Nearest,
-                        "Resize from the corner nearest the pointer",
-                    ),
-                    SizedBox::new().height(12.0).into_widget(),
-                    stays_on_screen_switch(app, core),
-                    SizedBox::new().height(24.0).into_widget(),
-                    Text::new("The ring").into_widget(),
-                    SizedBox::new().height(12.0).into_widget(),
-                    ring_zones(app, core),
-                ]),
-        )
-        .into_widget()
+    page(vec![
+        title("Window previews"),
+        gap(TITLE_GAP),
+        choice(PreviewTrigger::Hover, "When the pointer rests on a window"),
+        gap(CHOICE_GAP),
+        choice(PreviewTrigger::CommandKey, "Only while ⌘ is held"),
+    ])
 }
 
-/// Whether holding the chords moves and resizes the window under the pointer.
-fn grab_switch(app: &mut App, core: &Core) -> WidgetRef {
-    let enabled = core.settings.read(app).grab_enabled;
+/// Moving and resizing the window under the pointer by holding keys.
+fn hold_page(app: &mut App, core: &Core) -> WidgetRef {
+    let (enabled, stays) = {
+        let settings = core.settings.read(app);
+        (settings.grab_enabled, settings.stays_on_screen)
+    };
+    let grab = core.settings.clone();
+    let on_screen = core.settings.clone();
+    page(vec![
+        title("Move and resize windows"),
+        gap(TITLE_GAP),
+        switch_row(
+            enabled,
+            "Hold the keys below to move or resize the window under the pointer",
+            move |app, on| {
+                grab.update(app, |settings, cx| settings.set_grab_enabled(cx, on));
+            },
+        ),
+        gap(TITLE_GAP),
+        chord_row(app, core, "Move with", Chord::MOVE),
+        gap(OPTION_GAP),
+        chord_row(app, core, "Resize with", Chord::RESIZE),
+        gap(TITLE_GAP),
+        corner_choice(
+            app,
+            core,
+            ResizeCorner::BottomRight,
+            "Resize from the bottom-right corner",
+        ),
+        gap(CHOICE_GAP),
+        corner_choice(
+            app,
+            core,
+            ResizeCorner::Nearest,
+            "Resize from the corner nearest the pointer",
+        ),
+        gap(TITLE_GAP),
+        switch_row(
+            stays,
+            "Keep a window within the screen while it moves or resizes",
+            move |app, on| {
+                on_screen.update(app, |settings, cx| settings.set_stays_on_screen(cx, on));
+            },
+        ),
+    ])
+}
+
+/// The ring of zones: its keys, and what each direction does.
+fn ring_page(app: &mut App, core: &Core) -> WidgetRef {
+    let enabled = core.settings.read(app).ring_enabled;
     let settings = core.settings.clone();
-    Row::new()
-        .cross_axis_alignment(CrossAxisAlignment::Center)
-        .children(vec![
-            ToggleSwitch::new(enabled, move |app: &mut App, on| {
-                settings.update(app, |settings, cx| settings.set_grab_enabled(cx, on));
-            })
-            .into_widget(),
-            SizedBox::new().width(12.0).into_widget(),
-            Text::new(
-                "Hold the keys below to move, resize or arrange the window under the pointer",
-            )
-            .into_widget(),
-        ])
-        .into_widget()
+    page(vec![
+        title("The ring"),
+        gap(TITLE_GAP),
+        switch_row(
+            enabled,
+            "Hold the keys below for a ring of places to put the window under the pointer",
+            move |app, on| {
+                settings.update(app, |settings, cx| settings.set_ring_enabled(cx, on));
+            },
+        ),
+        gap(TITLE_GAP),
+        chord_row(app, core, "Open with", Chord::ARRANGE),
+        gap(TITLE_GAP + OPTION_GAP),
+        title("Where each direction puts the window"),
+        gap(TITLE_GAP),
+        ring_zones(app, core),
+    ])
 }
 
 /// Which of the hold's chords a row sets.
@@ -212,7 +337,7 @@ fn chord_row(app: &mut App, core: &Core, label: &str, which: Chord) -> WidgetRef
     let chord = which.read(core.settings.read(app));
     let mut children = vec![
         SizedBox::new()
-            .width(CHORD_LABEL_WIDTH)
+            .width(LABEL_WIDTH)
             .child(Text::new(label.to_owned()))
             .into_widget(),
     ];
@@ -248,23 +373,6 @@ fn corner_choice(app: &mut App, core: &Core, wanted: ResizeCorner, label: &str) 
     .into_widget()
 }
 
-/// Whether a moved or resized window stops at the screen's edge.
-fn stays_on_screen_switch(app: &mut App, core: &Core) -> WidgetRef {
-    let stays = core.settings.read(app).stays_on_screen;
-    let settings = core.settings.clone();
-    Row::new()
-        .cross_axis_alignment(CrossAxisAlignment::Center)
-        .children(vec![
-            ToggleSwitch::new(stays, move |app: &mut App, on| {
-                settings.update(app, |settings, cx| settings.set_stays_on_screen(cx, on));
-            })
-            .into_widget(),
-            SizedBox::new().width(12.0).into_widget(),
-            Text::new("Keep a window within the screen while it moves or resizes").into_widget(),
-        ])
-        .into_widget()
-}
-
 /// One row per direction of the ring, with a button that offers the zones it can pick.
 fn ring_zones(app: &mut App, core: &Core) -> WidgetRef {
     let zones = core.settings.read(app).ring_zones;
@@ -293,7 +401,7 @@ fn ring_zones(app: &mut App, core: &Core) -> WidgetRef {
                 .cross_axis_alignment(CrossAxisAlignment::Center)
                 .children(vec![
                     SizedBox::new()
-                        .width(CHORD_LABEL_WIDTH)
+                        .width(LABEL_WIDTH)
                         .child(Text::new(direction.name().to_owned()))
                         .into_widget(),
                     Button::new(
@@ -304,7 +412,7 @@ fn ring_zones(app: &mut App, core: &Core) -> WidgetRef {
                 ])
                 .into_widget(),
         );
-        rows.push(SizedBox::new().height(4.0).into_widget());
+        rows.push(gap(CHOICE_GAP));
     }
     Column::new()
         .cross_axis_alignment(CrossAxisAlignment::Start)

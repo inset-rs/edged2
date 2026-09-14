@@ -1,12 +1,14 @@
-//! One screen's panel: a window against the screen's right edge that shows a
+//! One screen's panel: a window against one edge of the screen that shows a
 //! strip and slides out to the screen's applications and windows when the
 //! pointer reaches it.
 //!
 //! The window is the host's; the panel decides its frame. The content is laid
 //! out at the panel's full width whatever the window shows and anchored to
-//! the screen's edge, so the strip is the content's own trailing cell and
-//! nothing moves as the window widens. The window is as tall as the content,
-//! centred on the screen's usable height.
+//! the side its icons are on, so the strip is the content's own cell of
+//! icons. With the icons at the screen's edge nothing moves as the window
+//! widens and the titles unfold beside them; with the icons at the far side
+//! the whole content slides out with the window, icons first. The window is
+//! as tall as the content, centred on the screen's usable height.
 //!
 //! The pointer's arrival comes from the window; its leaving is watched for
 //! while the panel is out, because a window's own enter and exit events go
@@ -20,8 +22,8 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use edged_core::Core;
-use edged_macos::Screen;
+use edged_core::{Core, PanelReveal};
+use edged_macos::{Screen, Side};
 use inset::{
     AlignmentGeometry, App, BuildContext, Column, CrossAxisAlignment, Handle, InheritedWidget,
     IntoWidget, LayoutBuilder, LimitedBox, Listener, MainAxisSize, MediaQuery, MouseRegion,
@@ -60,13 +62,42 @@ const TUCK_WIDTH: f64 = 1.0;
 /// How far from the screen's edge the pointer counts as at it.
 const EDGE_ZONE: f64 = 1.0;
 
+/// How the panel is laid out, from the settings: the screen edge it sits at
+/// and how it comes out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Layout {
+    pub side: Side,
+    pub reveal: PanelReveal,
+}
+
+impl Layout {
+    /// The side of a row its icon is on: the screen's edge while the titles
+    /// unfold beside the icons, the far side while the panel slides out icons
+    /// first.
+    pub fn icon_side(self) -> Side {
+        match self.reveal {
+            PanelReveal::Unfold => self.side,
+            PanelReveal::Slide => self.side.opposite(),
+        }
+    }
+
+    /// Where the content is held in the window: at the icons' side, so the
+    /// strip shows them whatever width the window is at.
+    fn anchor(self) -> AlignmentGeometry {
+        match self.icon_side() {
+            Side::Right => AlignmentGeometry::TOP_RIGHT,
+            Side::Left => AlignmentGeometry::TOP_LEFT,
+        }
+    }
+}
+
 /// The window a screen's panel lives in: bare, floating, on every Space, at
 /// the strip's width until the pointer reaches it. See-through, with no
 /// background of the host's: the panel puts its own glass behind it, shaped
 /// as it wants, through the window's native handle. It keeps the system's
 /// shadow, which is also where the hairline around a window comes from.
-pub fn window_config(screen: &Screen) -> WindowConfig {
-    let frame = frame_for(screen, STRIP_WIDTH, INITIAL_HEIGHT);
+pub fn window_config(screen: &Screen, side: Side) -> WindowConfig {
+    let frame = frame_for(screen, side, STRIP_WIDTH, INITIAL_HEIGHT);
     WindowConfig {
         title: "Edged".to_owned(),
         size: [frame.width(), frame.height()],
@@ -82,14 +113,18 @@ pub fn window_config(screen: &Screen) -> WindowConfig {
     }
 }
 
-/// Where a panel of this width and height sits: against the right edge of the
+/// Where a panel of this width and height sits: against one edge of the
 /// screen's usable area, centred on its height, never taller than that area
 /// less a margin.
-pub fn frame_for(screen: &Screen, width: f64, height: f64) -> Rect {
+pub fn frame_for(screen: &Screen, side: Side, width: f64, height: f64) -> Rect {
     let usable = &screen.visible_frame;
     let height = height.min(usable.height - 2.0 * MARGIN).max(1.0);
+    let left = match side {
+        Side::Right => usable.right() - width,
+        Side::Left => usable.x,
+    };
     Rect::from_ltwh(
-        usable.right() - width,
+        left,
         usable.y + (usable.height - height) / 2.0,
         width,
         height,
@@ -104,11 +139,14 @@ fn is_on(frame: &Rect, x: f64, y: f64) -> bool {
         && y <= frame.bottom + POINTER_MARGIN
 }
 
-/// Whether a point is at the screen's edge, level with the frame.
-fn is_at_edge(screen: &Screen, frame: &Rect, x: f64, y: f64) -> bool {
-    x >= screen.visible_frame.right() - EDGE_ZONE
-        && y >= frame.top - POINTER_MARGIN
-        && y <= frame.bottom + POINTER_MARGIN
+/// Whether a point is at the screen's edge the panel sits at, level with the frame.
+fn is_at_edge(screen: &Screen, side: Side, frame: &Rect, x: f64, y: f64) -> bool {
+    let usable = &screen.visible_frame;
+    let at_edge = match side {
+        Side::Right => x >= usable.right() - EDGE_ZONE,
+        Side::Left => x <= usable.x + EDGE_ZONE,
+    };
+    at_edge && y >= frame.top - POINTER_MARGIN && y <= frame.bottom + POINTER_MARGIN
 }
 
 /// The width the panel rests at: the strip, or a hair while tucked.
@@ -121,20 +159,22 @@ fn slide(duration: Duration) -> Option<Duration> {
     (!duration.is_zero()).then_some(duration)
 }
 
-/// The width of the panel the window shows now, for the rows to set their
-/// pill by.
+/// The width of the panel the window shows now and the side the icons are
+/// on, for the rows to set their pill by.
 pub struct PanelGeometry {
     pub visible_width: f64,
+    pub icon_side: Side,
     pub child: WidgetRef,
 }
 
 impl PanelGeometry {
-    /// The visible width above the `context`, or the full panel outside one.
-    pub fn of(app: &mut App, context: BuildContext) -> f64 {
+    /// The visible width and icon side above the `context`, or the full panel
+    /// with its icons on the right outside one.
+    pub fn of(app: &mut App, context: BuildContext) -> (f64, Side) {
         context
             .depend_on_inherited_widget_of_exact_type::<PanelGeometry>(app)
-            .map(|geometry| geometry.visible_width)
-            .unwrap_or(PANEL_WIDTH)
+            .map(|geometry| (geometry.visible_width, geometry.icon_side))
+            .unwrap_or((PANEL_WIDTH, Side::Right))
     }
 }
 
@@ -142,6 +182,7 @@ impl std::fmt::Debug for PanelGeometry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PanelGeometry")
             .field("visible_width", &self.visible_width)
+            .field("icon_side", &self.icon_side)
             .finish_non_exhaustive()
     }
 }
@@ -153,6 +194,7 @@ impl InheritedWidget for PanelGeometry {
 
     fn update_should_notify(&self, old_widget: &PanelGeometry) -> bool {
         (self.visible_width - old_widget.visible_width).abs() > 0.01
+            || self.icon_side != old_widget.icon_side
     }
 }
 
@@ -163,6 +205,7 @@ pub struct EdgePanel {
     /// Whether the screen shows a full-screen window, which owns it whole
     /// and has the panel keep out of sight.
     pub tucked: bool,
+    pub layout: Layout,
 }
 
 impl std::fmt::Debug for EdgePanel {
@@ -170,6 +213,7 @@ impl std::fmt::Debug for EdgePanel {
         f.debug_struct("EdgePanel")
             .field("display_id", &self.display_id)
             .field("tucked", &self.tucked)
+            .field("layout", &self.layout)
             .finish_non_exhaustive()
     }
 }
@@ -178,6 +222,7 @@ pub struct EdgePanelState {
     state: StateData<EdgePanel>,
     core: Core,
     display_id: u32,
+    layout: Layout,
     /// Whether the pointer is on the panel, which slides it out.
     expanded: bool,
     /// Whether the panel rests a hair wide and invisible, for a full-screen
@@ -204,6 +249,7 @@ impl StatefulWidget for EdgePanel {
             state: StateData::new(),
             core: self.core.clone(),
             display_id: self.display_id,
+            layout: self.layout,
             expanded: false,
             tucked: self.tucked,
             placed: false,
@@ -234,6 +280,8 @@ impl State for EdgePanelState {
     }
 
     fn did_update_widget(self: Handle<Self>, app: &mut App, old_widget: &EdgePanel) {
+        let layout = self.widget(app).layout;
+        app.get_mut(self).layout = layout;
         let tucked = self.widget(app).tucked;
         if tucked == old_widget.tucked {
             return;
@@ -273,9 +321,10 @@ impl State for EdgePanelState {
         let Some(screen) = core.desktop.read(app).screen(display_id).cloned() else {
             return SizedBox::new().into_widget();
         };
+        let layout = app.get(self).layout;
         // The permission request needs the panel's full width to be read.
         let content = if trusted {
-            content(app, &core, &screen, design)
+            content(app, &core, &screen, design, layout.icon_side())
         } else {
             PermissionView {
                 design,
@@ -308,7 +357,7 @@ impl State for EdgePanelState {
         MouseRegion::new()
             .on_enter(enter)
             .on_exit(exit)
-            .child(body(content, height_cap(&screen), measured))
+            .child(body(content, height_cap(&screen), measured, layout))
             .into_widget()
     }
 }
@@ -325,22 +374,29 @@ fn window_and_screen(this: Handle<EdgePanelState>, app: &mut App) -> Option<(Win
     Some((window, screen))
 }
 
+/// The edge the panel sits at.
+fn side_of(this: Handle<EdgePanelState>, app: &App) -> Side {
+    app.get(this).layout.side
+}
+
 /// Whether the pointer is on the panel at its full width.
 fn pointer_on_panel(this: Handle<EdgePanelState>, app: &App, screen: &Screen) -> bool {
-    let frame = frame_for(screen, PANEL_WIDTH, app.get(this).content_height);
+    let state = app.get(this);
+    let frame = frame_for(screen, state.layout.side, PANEL_WIDTH, state.content_height);
     edged_macos::pointer_location().is_some_and(|(x, y)| is_on(&frame, x, y))
 }
 
 /// The content laid out at full width and its own height whatever the window
-/// shows, against the screen's edge, so the strip is the content's own
-/// trailing cell; measured, so the window can follow the content's height;
-/// and told the width the window shows, so the rows can set their pill by it.
-fn body(content: WidgetRef, cap: f64, measured: SizeChangedCallback) -> WidgetRef {
+/// shows, held at the icons' side, so the strip is the content's own cell of
+/// icons; measured, so the window can follow the content's height; and told
+/// the width the window shows, so the rows can set their pill by it.
+fn body(content: WidgetRef, cap: f64, measured: SizeChangedCallback, layout: Layout) -> WidgetRef {
     LayoutBuilder::new(move |_app, _context, constraints| {
         PanelGeometry {
             visible_width: constraints.max_width,
+            icon_side: layout.icon_side(),
             child: OverflowBox::new()
-                .alignment(AlignmentGeometry::TOP_RIGHT)
+                .alignment(layout.anchor())
                 .min_width(PANEL_WIDTH)
                 .max_width(PANEL_WIDTH)
                 .min_height(0.0)
@@ -378,15 +434,16 @@ fn follow_height(
         return;
     }
     app.get_mut(this).content_height = height;
-    let width = {
+    let (side, width) = {
         let state = app.get(this);
-        if state.expanded || !trusted {
+        let width = if state.expanded || !trusted {
             PANEL_WIDTH
         } else {
             resting_width(state.tucked)
-        }
+        };
+        (state.layout.side, width)
     };
-    window.set_frame(frame_for(screen, width, height), None);
+    window.set_frame(frame_for(screen, side, width, height), None);
 }
 
 /// Slides the panel out and starts looking for the pointer to leave.
@@ -406,7 +463,7 @@ fn slide_out(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, sc
     }
     let height = app.get(this).content_height;
     window.set_frame(
-        frame_for(screen, PANEL_WIDTH, height),
+        frame_for(screen, side_of(this, app), PANEL_WIDTH, height),
         slide(motion_of(this, app).slide_out),
     );
     look_for_pointer(this, app, Rc::clone(window), screen.clone());
@@ -459,7 +516,7 @@ fn slide_in(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, scr
     let height = app.get(this).content_height;
     let duration = motion_of(this, app).slide_in;
     window.set_frame(
-        frame_for(screen, resting_width(tucked), height),
+        frame_for(screen, side_of(this, app), resting_width(tucked), height),
         slide(duration),
     );
     if tucked {
@@ -477,7 +534,10 @@ fn tuck(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, screen:
     }
     let height = app.get(this).content_height;
     let duration = motion_of(this, app).slide_in;
-    window.set_frame(frame_for(screen, TUCK_WIDTH, height), slide(duration));
+    window.set_frame(
+        frame_for(screen, side_of(this, app), TUCK_WIDTH, height),
+        slide(duration),
+    );
     hide_after(this, app, Rc::clone(window), screen.clone(), duration);
 }
 
@@ -502,7 +562,7 @@ fn untuck(this: Handle<EdgePanelState>, app: &mut App, window: &WindowRef, scree
     }
     let height = app.get(this).content_height;
     window.set_frame(
-        frame_for(screen, STRIP_WIDTH, height),
+        frame_for(screen, side_of(this, app), STRIP_WIDTH, height),
         slide(motion_of(this, app).slide_in),
     );
 }
@@ -544,9 +604,10 @@ fn watch_edge(this: Handle<EdgePanelState>, app: &mut App, window: WindowRef, sc
             if state.expanded || !state.tucked {
                 return;
             }
-            let frame = frame_for(&screen, PANEL_WIDTH, state.content_height);
+            let side = state.layout.side;
+            let frame = frame_for(&screen, side, PANEL_WIDTH, state.content_height);
             let reached = edged_macos::pointer_location()
-                .is_some_and(|(x, y)| is_at_edge(&screen, &frame, x, y));
+                .is_some_and(|(x, y)| is_at_edge(&screen, side, &frame, x, y));
             if reached {
                 slide_out(this, app, &window, &screen);
             } else {
@@ -572,38 +633,41 @@ fn motion_of(this: Handle<EdgePanelState>, app: &App) -> Motion {
 }
 
 /// Edged's menu, the applications with no windows, then each Space of the
-/// screen with its windows.
-fn content(app: &mut App, core: &Core, screen: &Screen, design: Design) -> WidgetRef {
+/// screen with its windows, every line with its icon on `icon_side`.
+fn content(
+    app: &mut App,
+    core: &Core,
+    screen: &Screen,
+    design: Design,
+    icon_side: Side,
+) -> WidgetRef {
     let menu = {
         let core = core.clone();
         Listener::new(move |app: &mut App| menus::edged_menu(app, &core))
     };
     let desktop = &core.desktop;
-    let mut children = vec![sections::header(design, menu)];
+    let rows = rows::Rows {
+        desktop: desktop.clone(),
+        previews: core.previews.clone(),
+        scale: screen.scale,
+        design,
+        icon_side,
+    };
+    let mut children = vec![sections::header(design, menu, icon_side)];
     {
         let model = desktop.read(app);
         for entry in model.windowless() {
-            children.push(rows::application_row(desktop, entry, design));
+            children.push(rows.application(entry));
         }
         for space in model.spaces_of(screen) {
             let showing = model.is_showing(space);
-            let rows: Vec<WidgetRef> = model
+            let lines: Vec<WidgetRef> = model
                 .windows_on(space.id)
                 .into_iter()
-                .map(|(entry, window)| {
-                    rows::window_row(
-                        desktop,
-                        &core.previews,
-                        entry,
-                        window,
-                        showing,
-                        screen.scale,
-                        design,
-                    )
-                })
+                .map(|(entry, window)| rows.window(entry, window, showing))
                 .collect();
             children.push(sections::space_section(
-                desktop, space, showing, rows, design,
+                desktop, space, showing, lines, design, icon_side,
             ));
         }
     }
@@ -651,9 +715,64 @@ mod tests {
             scale: 2.0,
             is_main: true,
         };
-        let frame = frame_for(&screen, PANEL_WIDTH, 400.0);
-        assert!(is_at_edge(&screen, &frame, 1439.5, frame.top + 10.0));
-        assert!(!is_at_edge(&screen, &frame, 1430.0, frame.top + 10.0));
-        assert!(!is_at_edge(&screen, &frame, 1439.5, frame.bottom + 20.0));
+        let frame = frame_for(&screen, Side::Right, PANEL_WIDTH, 400.0);
+        assert_eq!(frame.right, 1440.0);
+        assert!(is_at_edge(
+            &screen,
+            Side::Right,
+            &frame,
+            1439.5,
+            frame.top + 10.0
+        ));
+        assert!(!is_at_edge(
+            &screen,
+            Side::Right,
+            &frame,
+            1430.0,
+            frame.top + 10.0
+        ));
+        assert!(!is_at_edge(
+            &screen,
+            Side::Right,
+            &frame,
+            1439.5,
+            frame.bottom + 20.0
+        ));
+
+        let frame = frame_for(&screen, Side::Left, PANEL_WIDTH, 400.0);
+        assert_eq!(frame.left, 0.0);
+        assert!(is_at_edge(
+            &screen,
+            Side::Left,
+            &frame,
+            0.5,
+            frame.top + 10.0
+        ));
+        assert!(!is_at_edge(
+            &screen,
+            Side::Left,
+            &frame,
+            10.0,
+            frame.top + 10.0
+        ));
+    }
+
+    #[test]
+    fn the_icons_are_at_the_edge_while_unfolding_and_at_the_far_side_while_sliding() {
+        let unfold = Layout {
+            side: Side::Right,
+            reveal: PanelReveal::Unfold,
+        };
+        assert_eq!(unfold.icon_side(), Side::Right);
+        let slide = Layout {
+            side: Side::Right,
+            reveal: PanelReveal::Slide,
+        };
+        assert_eq!(slide.icon_side(), Side::Left);
+        let left = Layout {
+            side: Side::Left,
+            reveal: PanelReveal::Slide,
+        };
+        assert_eq!(left.icon_side(), Side::Right);
     }
 }

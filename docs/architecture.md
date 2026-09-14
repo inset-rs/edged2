@@ -40,7 +40,7 @@ Two rules follow. Nothing in `edged-core` names a widget, a window or a colour. 
 | `Permissions` | accessibility granted, screen recording granted | the poll until accessibility is granted; emits `Granted` | `request(permission)`, `open_settings`, `refresh` |
 | `Appearance` | accent colour, reduce motion | refreshed on the system's appearance notification | none; read only |
 | `Clearing` | nothing | the timer that narrows windows off the strips | none |
-| `Settings` | launch at login, when previews show | nothing; emits `SettingsRequested` when the user asks for the window | `set_launches_at_login`, `set_preview_trigger`, `request_window` |
+| `Settings` | launch at login, the panel's edge and how it comes out, when previews show, the hold's and the ring's keys and options | nothing; emits `SettingsRequested` when the user asks for the window | `set_launches_at_login`, `set_panel_side`, `set_panel_reveal`, `set_preview_trigger`, the hold's and the ring's setters, `request_window` |
 | `Previews` | which window the pointer rests on, the pictures taken of windows, the windows the system will picture | the rest and refresh timers | `rest_on(window)`, `picture_of(id)` |
 | `Grab` | the window the keys hold, with the pointer's origin and position and the frame it started from | the input observer | none; it acts on the keys and the pointer |
 

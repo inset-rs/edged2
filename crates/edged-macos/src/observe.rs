@@ -6,6 +6,7 @@
 //! All three arrive on the main run loop, which is the thread the app's own
 //! loop runs on, so the callback may reach the app directly.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -37,6 +38,8 @@ pub enum Change {
     Windows(i32),
     /// One window of this process was renamed, minimized, restored, moved or resized.
     Window(i32, WindowId),
+    /// One window of this process was destroyed.
+    Closed(i32, WindowId),
     /// Keyboard focus moved to another window of this process.
     Focus(i32),
     /// A display started showing a different Space.
@@ -162,19 +165,20 @@ impl Drop for Watcher {
     }
 }
 
-/// What the accessibility callback is handed back: whose process it watches
-/// and where to report.
+/// What the accessibility callback is handed back: whose process it watches,
+/// where to report, and the windows observed by id, so that a destroyed
+/// window, whose element answers nothing any more, is still known by name.
 struct Refcon {
     pid: i32,
     on_change: OnChange,
+    observed: RefCell<HashMap<WindowId, Element>>,
 }
 
 struct ApplicationObserver {
     observer: CFRetained<AXObserver>,
     /// Boxed so its address stays fixed for the life of the observer.
-    _refcon: Box<Refcon>,
+    refcon: Box<Refcon>,
     element: Element,
-    windows: HashSet<WindowId>,
 }
 
 impl ApplicationObserver {
@@ -185,13 +189,16 @@ impl ApplicationObserver {
             return None;
         }
         let observer = unsafe { CFRetained::from_raw(NonNull::new(raw)?) };
-        let refcon = Box::new(Refcon { pid, on_change });
+        let refcon = Box::new(Refcon {
+            pid,
+            on_change,
+            observed: RefCell::new(HashMap::new()),
+        });
         let element = Element::application(pid);
         let observer = ApplicationObserver {
             observer,
-            _refcon: refcon,
+            refcon,
             element,
-            windows: HashSet::new(),
         };
         for name in APPLICATION_NOTIFICATIONS {
             observer.add(observer.element.raw(), name);
@@ -206,22 +213,47 @@ impl ApplicationObserver {
     fn observe_windows(&mut self, windows: &[Window]) {
         let current: HashSet<WindowId> = windows.iter().map(|window| window.id).collect();
         for window in windows {
-            if self.windows.insert(window.id) {
+            let new = !self.refcon.observed.borrow().contains_key(&window.id);
+            if new {
                 for name in WINDOW_NOTIFICATIONS {
                     self.add(window.element().raw(), name);
                 }
+                self.refcon
+                    .observed
+                    .borrow_mut()
+                    .insert(window.id, window.element().clone());
             }
         }
-        // A destroyed window's element is gone with it; only the id set
+        // A destroyed window's element is gone with it; only the entry
         // needs forgetting so a reused id is observed again.
-        self.windows.retain(|id| current.contains(id));
+        self.refcon
+            .observed
+            .borrow_mut()
+            .retain(|id, _| current.contains(id));
     }
 
     fn add(&self, element: &AXUIElement, notification: &str) {
         let name = CFString::from_str(notification);
-        let refcon = NonNull::from(&*self._refcon).as_ptr().cast::<c_void>();
+        let refcon = NonNull::from(&*self.refcon).as_ptr().cast::<c_void>();
         let _ = unsafe { self.observer.add_notification(element, &name, refcon) };
     }
+}
+
+/// The window a destroyed element stood for: asked of the element while it
+/// still answers, else found among the elements observed, which compare
+/// equal by token after the window is gone.
+fn closed_window(refcon: &Refcon, element: &AXUIElement) -> Option<WindowId> {
+    let mut observed = refcon.observed.borrow_mut();
+    let id = crate::private::window_id(element).or_else(|| {
+        // SAFETY: the callback's element is a live reference for the call.
+        let probe = Element::from_retained(unsafe { CFRetained::retain(NonNull::from(element)) });
+        observed
+            .iter()
+            .find(|(_, known)| **known == probe)
+            .map(|(id, _)| *id)
+    })?;
+    observed.remove(&id);
+    Some(id)
 }
 
 impl Drop for ApplicationObserver {
@@ -246,6 +278,10 @@ unsafe extern "C-unwind" fn callback(
     let pid = refcon.pid;
     let name = unsafe { notification.as_ref() }.to_string();
     let change = match name.as_str() {
+        "AXUIElementDestroyed" => match closed_window(refcon, unsafe { element.as_ref() }) {
+            Some(id) => Change::Closed(pid, id),
+            None => Change::Windows(pid),
+        },
         "AXFocusedWindowChanged" | "AXMainWindowChanged" => Change::Focus(pid),
         "AXApplicationActivated"
         | "AXApplicationDeactivated"

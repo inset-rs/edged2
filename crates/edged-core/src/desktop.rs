@@ -409,6 +409,7 @@ impl Desktop {
                     expected: expected.get(&pid).cloned().unwrap_or_default(),
                 }),
                 Change::Window(pid, id) => self.refresh_window(pid, id),
+                Change::Closed(pid, id) => self.remove_window(pid, id),
                 Change::Focus(pid) => {
                     self.refresh_active();
                     if let Some(entry) = self.entry_mut(pid) {
@@ -571,6 +572,14 @@ impl Desktop {
                 .into_iter()
                 .filter(|window| !known.contains(&window.id)),
         );
+    }
+
+    /// Drops a window macOS reported destroyed: the application is back among
+    /// the windowless ones at once when it was the last.
+    fn remove_window(&mut self, pid: i32, id: WindowId) {
+        if let Some(entry) = self.entry_mut(pid) {
+            entry.windows.retain(|window| window.id != id);
+        }
     }
 
     /// Re-reads one window, and drops it once it is gone.

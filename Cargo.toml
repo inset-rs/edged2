@@ -14,12 +14,12 @@ unsafe_code = "forbid"
 [workspace.dependencies]
 edged-core = { path = "crates/edged-core" }
 edged-macos = { path = "crates/edged-macos" }
-inset = "0.2.1"
-inset-embedder-winit = "0.2.1"
-inset-foundation = "0.2.1"
-inset-rendering = "0.2.1"
+inset = "0.3.0"
+inset-embedder-winit = "0.3.0"
+inset-foundation = "0.3.0"
+inset-rendering = "0.3.0"
 inset-winui = { path = "../inset-winui/crates/inset-winui" }
-valo-codec-apple = "0.4.6"
+valo-codec-apple = "0.5.0"
 block2 = "0.6"
 objc2 = "0.6"
 objc2-app-kit = "0.3"

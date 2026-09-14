@@ -1,5 +1,6 @@
 //! What the user set about Edged itself, kept across launches.
 
+use edged_macos::Side;
 use inset_foundation::{Context, EventEmitter};
 
 use crate::shortcut::{Chord, Key};
@@ -62,6 +63,51 @@ impl ResizeCorner {
     }
 }
 
+/// How the panel comes out when the pointer reaches its strip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanelReveal {
+    /// The icons stay at the screen's edge and the titles unfold beside them.
+    Unfold,
+    /// The whole panel slides out, icons first, the titles following them.
+    Slide,
+}
+
+impl PanelReveal {
+    const KEY: &'static str = "panel_reveal";
+
+    fn from_stored(value: &str) -> Option<PanelReveal> {
+        match value {
+            "unfold" => Some(PanelReveal::Unfold),
+            "slide" => Some(PanelReveal::Slide),
+            _ => None,
+        }
+    }
+
+    fn stored(self) -> &'static str {
+        match self {
+            PanelReveal::Unfold => "unfold",
+            PanelReveal::Slide => "slide",
+        }
+    }
+}
+
+const PANEL_SIDE_KEY: &str = "panel_side";
+
+fn side_from_stored(value: &str) -> Option<Side> {
+    match value {
+        "left" => Some(Side::Left),
+        "right" => Some(Side::Right),
+        _ => None,
+    }
+}
+
+fn side_stored(side: Side) -> &'static str {
+    match side {
+        Side::Left => "left",
+        Side::Right => "right",
+    }
+}
+
 /// The user asked for the settings window.
 #[derive(Clone, Copy, Debug)]
 pub struct SettingsRequested;
@@ -73,18 +119,23 @@ const MOVE_CHORD_KEY: &str = "grab_move";
 const RESIZE_CHORD_KEY: &str = "grab_resize";
 const ARRANGE_CHORD_KEY: &str = "grab_arrange";
 const STAYS_ON_SCREEN_KEY: &str = "grab_stay_on_screen";
+const RING_KEY: &str = "ring";
 /// The stored key of a ring direction's zone.
 fn ring_zone_key(direction: Direction) -> String {
     format!("ring_{}", direction.stored())
 }
 /// The chords a fresh install holds windows with.
-pub const DEFAULT_MOVE_CHORD: Chord = Chord::NONE.with(Key::Option);
-pub const DEFAULT_RESIZE_CHORD: Chord = Chord::NONE.with(Key::Option).with(Key::Control);
+pub const DEFAULT_MOVE_CHORD: Chord = Chord::NONE.with(Key::Control).with(Key::Shift);
+pub const DEFAULT_RESIZE_CHORD: Chord = Chord::NONE.with(Key::Option).with(Key::Shift);
 pub const DEFAULT_ARRANGE_CHORD: Chord = Chord::NONE.with(Key::Control).with(Key::Command);
 
 pub struct Settings {
     /// Whether macOS starts Edged at login.
     pub launches_at_login: bool,
+    /// The screen edge the panel sits at.
+    pub panel_side: Side,
+    /// How the panel comes out.
+    pub panel_reveal: PanelReveal,
     pub preview_trigger: PreviewTrigger,
     /// Whether holding the chords below moves and resizes the window under the pointer.
     pub grab_enabled: bool,
@@ -94,6 +145,8 @@ pub struct Settings {
     pub resize_chord: Chord,
     /// The corner the resize drags.
     pub resize_corner: ResizeCorner,
+    /// Whether holding the arrange chord shows the ring.
+    pub ring_enabled: bool,
     /// The keys that show the ring of zones the window under the pointer can be put in.
     pub arrange_chord: Chord,
     /// Whether a moved or resized window stops at the screen's edge.
@@ -118,11 +171,14 @@ impl Settings {
     pub(crate) fn for_test() -> Settings {
         Settings {
             launches_at_login: false,
+            panel_side: Side::Right,
+            panel_reveal: PanelReveal::Unfold,
             preview_trigger: PreviewTrigger::Hover,
             grab_enabled: true,
             move_chord: DEFAULT_MOVE_CHORD,
             resize_chord: DEFAULT_RESIZE_CHORD,
             resize_corner: ResizeCorner::BottomRight,
+            ring_enabled: true,
             arrange_chord: DEFAULT_ARRANGE_CHORD,
             stays_on_screen: true,
             ring_zones: Direction::default_zones(),
@@ -134,10 +190,18 @@ impl Settings {
     pub fn read() -> Settings {
         Settings {
             launches_at_login: edged_macos::launches_at_login(),
+            panel_side: edged_macos::read_default(PANEL_SIDE_KEY)
+                .as_deref()
+                .and_then(side_from_stored)
+                .unwrap_or(Side::Right),
+            panel_reveal: edged_macos::read_default(PanelReveal::KEY)
+                .as_deref()
+                .and_then(PanelReveal::from_stored)
+                .unwrap_or(PanelReveal::Unfold),
             preview_trigger: edged_macos::read_default(PreviewTrigger::KEY)
                 .as_deref()
                 .and_then(PreviewTrigger::from_stored)
-                .unwrap_or(PreviewTrigger::Hover),
+                .unwrap_or(PreviewTrigger::CommandKey),
             grab_enabled: edged_macos::read_default(GRAB_KEY).as_deref() != Some("off"),
             move_chord: chord_default(MOVE_CHORD_KEY, DEFAULT_MOVE_CHORD),
             resize_chord: chord_default(RESIZE_CHORD_KEY, DEFAULT_RESIZE_CHORD),
@@ -145,6 +209,7 @@ impl Settings {
                 .as_deref()
                 .and_then(ResizeCorner::from_stored)
                 .unwrap_or(ResizeCorner::BottomRight),
+            ring_enabled: edged_macos::read_default(RING_KEY).as_deref() != Some("off"),
             arrange_chord: chord_default(ARRANGE_CHORD_KEY, DEFAULT_ARRANGE_CHORD),
             stays_on_screen: edged_macos::read_default(STAYS_ON_SCREEN_KEY).as_deref()
                 != Some("off"),
@@ -216,6 +281,33 @@ impl Settings {
         }
         self.resize_chord = chord;
         edged_macos::write_default(RESIZE_CHORD_KEY, &chord.stored());
+        cx.notify();
+    }
+
+    pub fn set_panel_side(&mut self, cx: &mut Context<Settings>, side: Side) {
+        if self.panel_side == side {
+            return;
+        }
+        self.panel_side = side;
+        edged_macos::write_default(PANEL_SIDE_KEY, side_stored(side));
+        cx.notify();
+    }
+
+    pub fn set_panel_reveal(&mut self, cx: &mut Context<Settings>, reveal: PanelReveal) {
+        if self.panel_reveal == reveal {
+            return;
+        }
+        self.panel_reveal = reveal;
+        edged_macos::write_default(PanelReveal::KEY, reveal.stored());
+        cx.notify();
+    }
+
+    pub fn set_ring_enabled(&mut self, cx: &mut Context<Settings>, enabled: bool) {
+        if self.ring_enabled == enabled {
+            return;
+        }
+        self.ring_enabled = enabled;
+        edged_macos::write_default(RING_KEY, if enabled { "on" } else { "off" });
         cx.notify();
     }
 

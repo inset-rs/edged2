@@ -1,17 +1,18 @@
-//! One line of the panel: a title, an icon at the screen's edge, and what
+//! One line of the panel: a title, an icon in the strip's cell, and what
 //! choosing it does.
 //!
-//! The icon sits in the strip's cell at the trailing end of the row, so it
-//! stays under the pointer while the panel slides out and the title unfurls
-//! beside it. The hover pill follows the window: as wide as the icon's box
-//! while the panel is in, the whole row once it is out.
+//! The icon sits at one end of the row, the end the panel's content is held
+//! by, so the strip shows it: at the screen's edge, where it stays under the
+//! pointer while the title unfolds beside it, or at the far side, where it
+//! leads the panel out. The hover pill follows the window: as wide as the
+//! icon's box while the panel is in, the whole row once it is out.
 
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use edged_core::{AppEntry, Desktop, Previews, Rest};
-use edged_macos::Window;
+use edged_macos::{Side, Window};
 use inset::MouseRegion;
 use inset::{
     AnimatedContainer, AnimatedOpacity, App, Border, BorderRadius, BorderSide, BorderStyle,
@@ -79,10 +80,17 @@ pub struct PanelRow {
     pub hover: Option<HoverAction>,
     pub key: Option<KeyRef>,
     pub design: Design,
+    /// The end of the row the icon is at.
+    pub icon_side: Side,
 }
 
 impl PanelRow {
-    pub fn new(label: impl Into<String>, click: Listener, design: Design) -> PanelRow {
+    pub fn new(
+        label: impl Into<String>,
+        click: Listener,
+        design: Design,
+        icon_side: Side,
+    ) -> PanelRow {
         PanelRow {
             icon: None,
             label: label.into(),
@@ -94,6 +102,7 @@ impl PanelRow {
             hover: None,
             key: None,
             design,
+            icon_side,
         }
     }
 
@@ -154,6 +163,7 @@ impl StatelessWidget for PanelRow {
         let focused = self.is_focused;
         let dimmed = self.is_dimmed;
         let design = self.design;
+        let icon_side = self.icon_side;
         let states = CommonStates::new(self.click.clone(), move |_app, _context, states| {
             template(
                 &Look {
@@ -165,6 +175,7 @@ impl StatelessWidget for PanelRow {
                 },
                 &design,
                 states,
+                icon_side,
             )
         })
         .into_widget();
@@ -202,7 +213,7 @@ struct Look<'a> {
 }
 
 /// The row for one set of states: the pill behind, the title and icon over it.
-fn template(look: &Look, design: &Design, states: ControlStates) -> WidgetRef {
+fn template(look: &Look, design: &Design, states: ControlStates, icon_side: Side) -> WidgetRef {
     let palette = &design.palette;
     let motion = &design.motion;
     let (fill, duration) = match (states.common, look.focused) {
@@ -224,19 +235,20 @@ fn template(look: &Look, design: &Design, states: ControlStates) -> WidgetRef {
         TRANSPARENT
     };
     Tile {
-        text: title(look.label, label_color, design),
-        cell: glyph(look, ring, design),
+        text: title(look.label, label_color, design, icon_side),
+        cell: glyph(look, ring, design, icon_side),
         fill,
         duration,
         curve: motion.arriving(),
         height: ROW_HEIGHT,
+        icon_side,
     }
     .build()
 }
 
 /// What every line of the panel is made of: a pill that follows the window,
-/// text hugging the strip, and the line's cell in the strip at the screen's
-/// edge. Rows and headings differ only in what they put in the two places.
+/// text hugging the strip, and the line's cell in the strip at one end. Rows
+/// and headings differ only in what they put in the two places.
 pub struct Tile {
     pub text: WidgetRef,
     pub cell: WidgetRef,
@@ -246,6 +258,8 @@ pub struct Tile {
     pub duration: Duration,
     pub curve: Rc<dyn Curve>,
     pub height: f64,
+    /// The end of the line the cell is at.
+    pub icon_side: Side,
 }
 
 impl Tile {
@@ -257,16 +271,19 @@ impl Tile {
             duration: self.duration,
             curve: self.curve,
         };
+        let margin = SizedBox::new()
+            .width(PILL_LEADING + TITLE_INSET)
+            .into_widget();
+        let text = Expanded::new(self.text).into_widget();
+        let gap = SizedBox::new().width(TITLE_GAP).into_widget();
+        let cell = strip_cell(self.cell);
+        let children = match self.icon_side {
+            Side::Right => vec![margin, text, gap, cell],
+            Side::Left => vec![cell, gap, text, margin],
+        };
         let content = Row::new()
             .cross_axis_alignment(CrossAxisAlignment::Center)
-            .children(vec![
-                SizedBox::new()
-                    .width(PILL_LEADING + TITLE_INSET)
-                    .into_widget(),
-                Expanded::new(self.text).into_widget(),
-                SizedBox::new().width(TITLE_GAP).into_widget(),
-                strip_cell(self.cell),
-            ]);
+            .children(children);
         SizedBox::new()
             .height(self.height)
             .child(
@@ -297,8 +314,8 @@ impl std::fmt::Debug for Pill {
 
 impl StatelessWidget for Pill {
     fn build(&self, app: &mut App, context: BuildContext) -> WidgetRef {
-        let visible_width = PanelGeometry::of(app, context);
-        Positioned::new(
+        let (visible_width, icon_side) = PanelGeometry::of(app, context);
+        let pill = Positioned::new(
             AnimatedContainer::new(self.duration)
                 .curve(Rc::clone(&self.curve))
                 .decoration(
@@ -307,10 +324,13 @@ impl StatelessWidget for Pill {
                         .border_radius(BorderRadius::circular(PILL_RADIUS)),
                 ),
         )
-        .left(pill_leading(visible_width))
         .top(PILL_INSET)
-        .right(PILL_TRAILING)
-        .bottom(PILL_INSET)
+        .bottom(PILL_INSET);
+        // The pill's far end follows the window; its near end hugs the icon.
+        match icon_side {
+            Side::Right => pill.left(pill_leading(visible_width)).right(PILL_TRAILING),
+            Side::Left => pill.left(PILL_TRAILING).right(pill_leading(visible_width)),
+        }
         .into_widget()
     }
 }
@@ -335,7 +355,7 @@ fn pill_leading(visible_width: f64) -> f64 {
 }
 
 /// The strip's cell: whatever a row ends with sits centred in the width the
-/// collapsed panel shows, at the screen's edge.
+/// collapsed panel shows.
 pub fn strip_cell<K>(child: impl IntoWidget<K>) -> WidgetRef {
     SizedBox::new()
         .width(STRIP_WIDTH)
@@ -345,8 +365,8 @@ pub fn strip_cell<K>(child: impl IntoWidget<K>) -> WidgetRef {
 
 /// The application's icon in its box, ringed when its window is the one
 /// being looked at, faded when it is put away, with the Dock badge over its
-/// outer corner.
-fn glyph(look: &Look, ring: Color, design: &Design) -> WidgetRef {
+/// outer corner, the one away from the title.
+fn glyph(look: &Look, ring: Color, design: &Design, icon_side: Side) -> WidgetRef {
     let motion = &design.motion;
     let image = SizedBox::new().width(ICON_BOX).height(ICON_BOX);
     let image = match look.icon.clone() {
@@ -375,15 +395,14 @@ fn glyph(look: &Look, ring: Color, design: &Design) -> WidgetRef {
     let Some(badge) = &look.badge else {
         return faded.into_widget();
     };
+    let badge = Positioned::new(dock_badge(badge, design)).top(-2.0);
+    let badge = match icon_side {
+        Side::Right => badge.right(-1.0),
+        Side::Left => badge.left(-1.0),
+    };
     Stack::new()
         .clip_behavior(Clip::None)
-        .children(vec![
-            faded.into_widget(),
-            Positioned::new(dock_badge(badge, design))
-                .top(-2.0)
-                .right(-1.0)
-                .into_widget(),
-        ])
+        .children(vec![faded.into_widget(), badge.into_widget()])
         .into_widget()
 }
 
@@ -423,25 +442,46 @@ fn badge_count(label: &str) -> Option<String> {
     })
 }
 
-/// One line, hugging the icon, cut with an ellipsis at its far end: a window
-/// title is often far wider than the panel.
-pub fn title(label: &str, color: Color, design: &Design) -> WidgetRef {
+/// One line, hugging the icon on `icon_side`, cut with an ellipsis at its far
+/// end: a window title is often far wider than the panel.
+pub fn title(label: &str, color: Color, design: &Design, icon_side: Side) -> WidgetRef {
+    let align = match icon_side {
+        Side::Right => TextAlign::Right,
+        Side::Left => TextAlign::Left,
+    };
     Text::new(label.to_owned())
         .style(design.palette.text(LABEL_SIZE, FontWeight::W400, color))
-        .text_align(TextAlign::Right)
+        .text_align(align)
         .max_lines(1)
         .overflow(TextOverflow::Ellipsis)
         .into_widget()
 }
 
-/// A row for an application with no windows: choosing it activates the application.
-pub fn application_row(desktop: &Entity<Desktop>, entry: &AppEntry, design: Design) -> WidgetRef {
-    let activate = {
-        let (desktop, application) = (desktop.clone(), entry.application.clone());
-        Listener::new(move |app: &mut App| desktop.read(app).activate(&application))
-    };
-    let (menu_desktop, menu_target) = (desktop.clone(), entry.application.clone());
-    PanelRow::new(entry.application.name.clone(), activate, design)
+/// What the rows of one panel are built with: the entities they act on, the
+/// screen's scale for the pictures they ask for, and how they look.
+pub struct Rows {
+    pub desktop: Entity<Desktop>,
+    pub previews: Entity<Previews>,
+    pub scale: f64,
+    pub design: Design,
+    /// The end of every row the icon is at.
+    pub icon_side: Side,
+}
+
+impl Rows {
+    /// A row for an application with no windows: choosing it activates the application.
+    pub fn application(&self, entry: &AppEntry) -> WidgetRef {
+        let activate = {
+            let (desktop, application) = (self.desktop.clone(), entry.application.clone());
+            Listener::new(move |app: &mut App| desktop.read(app).activate(&application))
+        };
+        let (menu_desktop, menu_target) = (self.desktop.clone(), entry.application.clone());
+        PanelRow::new(
+            entry.application.name.clone(),
+            activate,
+            self.design,
+            self.icon_side,
+        )
         .icon(entry.icon.clone())
         .badge(entry.badge.clone())
         .dimmed(entry.application.is_hidden)
@@ -450,60 +490,55 @@ pub fn application_row(desktop: &Entity<Desktop>, entry: &AppEntry, design: Desi
         }))
         .key(Rc::new(ValueKey::new(entry.application.pid)) as KeyRef)
         .into_widget()
-}
+    }
 
-/// A row for one window: choosing it brings the window forward, and the
-/// pointer resting on it shows a picture of the window where it would be,
-/// except for the window in front on the Space the screen is showing, which
-/// is in plain sight.
-pub fn window_row(
-    desktop: &Entity<Desktop>,
-    previews: &Entity<Previews>,
-    entry: &AppEntry,
-    window: &Window,
-    on_current_space: bool,
-    scale: f64,
-    design: Design,
-) -> WidgetRef {
-    let focused = entry.application.is_active && entry.focused == Some(window.id);
-    let in_sight = focused && on_current_space && !window.is_minimized;
-    let hover: HoverAction = {
-        let (previews, window) = (previews.clone(), window.clone());
-        Rc::new(move |app: &mut App, on: bool| {
-            let rest = (on && !in_sight).then(|| Rest {
-                window: window.clone(),
-                scale,
-            });
-            previews.update(app, |previews, cx| previews.rest_on(cx, rest));
-        })
-    };
-    let label = if window.title.is_empty() {
-        entry.application.name.clone()
-    } else {
-        window.title.clone()
-    };
-    let focus = {
-        let (desktop, previews, window) = (desktop.clone(), previews.clone(), window.clone());
-        Listener::new(move |app: &mut App| {
-            // The window comes forward; its picture would only sit on top of it.
-            previews.update(app, |previews, cx| previews.dismiss(cx));
-            desktop.read(app).focus(&window)
-        })
-    };
-    let menu_window = window.clone();
-    let menu_application = entry.application.clone();
-    let menu_desktop = desktop.clone();
-    PanelRow::new(label, focus, design)
-        .icon(entry.icon.clone())
-        .badge(entry.badge.clone())
-        .focused(focused)
-        .dimmed(window.is_minimized || entry.application.is_hidden)
-        .secondary(Rc::new(move |app: &mut App| {
-            menus::window_menu(app, &menu_desktop, &menu_window, &menu_application)
-        }))
-        .hover(hover)
-        .key(Rc::new(ValueKey::new(window.id)) as KeyRef)
-        .into_widget()
+    /// A row for one window: choosing it brings the window forward, and the
+    /// pointer resting on it shows a picture of the window where it would be,
+    /// except for the window in front on the Space the screen is showing,
+    /// which is in plain sight.
+    pub fn window(&self, entry: &AppEntry, window: &Window, on_current_space: bool) -> WidgetRef {
+        let focused = entry.application.is_active && entry.focused == Some(window.id);
+        let in_sight = focused && on_current_space && !window.is_minimized;
+        let scale = self.scale;
+        let hover: HoverAction = {
+            let (previews, window) = (self.previews.clone(), window.clone());
+            Rc::new(move |app: &mut App, on: bool| {
+                let rest = (on && !in_sight).then(|| Rest {
+                    window: window.clone(),
+                    scale,
+                });
+                previews.update(app, |previews, cx| previews.rest_on(cx, rest));
+            })
+        };
+        let label = if window.title.is_empty() {
+            entry.application.name.clone()
+        } else {
+            window.title.clone()
+        };
+        let focus = {
+            let (desktop, previews, window) =
+                (self.desktop.clone(), self.previews.clone(), window.clone());
+            Listener::new(move |app: &mut App| {
+                // The window comes forward; its picture would only sit on top of it.
+                previews.update(app, |previews, cx| previews.dismiss(cx));
+                desktop.read(app).focus(&window)
+            })
+        };
+        let menu_window = window.clone();
+        let menu_application = entry.application.clone();
+        let menu_desktop = self.desktop.clone();
+        PanelRow::new(label, focus, self.design, self.icon_side)
+            .icon(entry.icon.clone())
+            .badge(entry.badge.clone())
+            .focused(focused)
+            .dimmed(window.is_minimized || entry.application.is_hidden)
+            .secondary(Rc::new(move |app: &mut App| {
+                menus::window_menu(app, &menu_desktop, &menu_window, &menu_application)
+            }))
+            .hover(hover)
+            .key(Rc::new(ValueKey::new(window.id)) as KeyRef)
+            .into_widget()
+    }
 }
 
 #[cfg(test)]

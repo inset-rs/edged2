@@ -42,7 +42,7 @@ pub use permission::{
     request_screen_recording, request_trust,
 };
 pub use private::{SpaceId, WindowId};
-pub use screen::{Frame, Screen, pointer_location, screens};
+pub use screen::{Frame, Screen, Side, pointer_location, screens};
 pub use space::{Space, SpaceKind, current_space, spaces};
 pub use window::{
     Window, focused_window_of, listed_windows, walk_step, window_at, window_ids_by_process,

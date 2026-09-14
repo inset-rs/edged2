@@ -45,7 +45,11 @@ impl Menu {
 
     /// Shows the menu at the pointer and runs the chosen action.
     pub fn show(self, app: &mut App) {
-        let Some(chosen) = app.platform().show_popup_menu(&self.entries) else {
+        let chosen = app
+            .platform()
+            .popup_menus()
+            .and_then(|menus| menus.show(&self.entries));
+        let Some(chosen) = chosen else {
             return;
         };
         if let Some(Some(action)) = self.actions.into_iter().nth(chosen) {

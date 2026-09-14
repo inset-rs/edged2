@@ -7,7 +7,7 @@
 //! the whole line is the target, as a row is.
 
 use edged_core::Desktop;
-use edged_macos::{Space, SpaceKind};
+use edged_macos::{Side, Space, SpaceKind};
 use inset::{
     AnimatedContainer, App, Border, BorderRadius, BorderSide, BorderStyle, BoxDecoration, Center,
     Column, CrossAxisAlignment, EdgeInsetsGeometry, Entity, FontWeight, IntoWidget, Listener,
@@ -68,7 +68,7 @@ fn marker(label: &str, current: bool, design: &Design) -> WidgetRef {
 }
 
 /// The first line: Edged's own menu behind a "more" mark, reachable in the strip.
-pub fn header(design: Design, menu: Listener) -> WidgetRef {
+pub fn header(design: Design, menu: Listener, icon_side: Side) -> WidgetRef {
     let color = design.palette.secondary_label;
     let line = CommonStates::new(menu, move |_app, _context, states| {
         let (fill, duration) = rows::plain_fill(states, &design);
@@ -82,6 +82,7 @@ pub fn header(design: Design, menu: Listener) -> WidgetRef {
             duration,
             curve: design.motion.arriving(),
             height: HEADING_HEIGHT,
+            icon_side,
         }
         .build()
     });
@@ -96,6 +97,7 @@ pub fn space_section(
     showing: bool,
     rows: Vec<WidgetRef>,
     design: Design,
+    icon_side: Side,
 ) -> WidgetRef {
     let mark = match (space.kind, space.index) {
         (SpaceKind::Fullscreen, _) => "F".to_owned(),
@@ -119,6 +121,7 @@ pub fn space_section(
             duration,
             curve: design.motion.arriving(),
             height: HEADING_HEIGHT,
+            icon_side,
         }
         .build()
     });

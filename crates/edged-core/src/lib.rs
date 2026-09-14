@@ -22,7 +22,7 @@ pub use desktop::{AppEntry, Desktop};
 pub use grab::{Corner, Grab, Hold, Mode};
 pub use permissions::{Granted, Permission, Permissions};
 pub use previews::{Preview, Previews, Rest};
-pub use settings::{PreviewTrigger, ResizeCorner, Settings, SettingsRequested};
+pub use settings::{PanelReveal, PreviewTrigger, ResizeCorner, Settings, SettingsRequested};
 pub use shortcut::{Chord, Key};
 pub use zone::{Direction, RingZones, Zone};
 
@@ -47,9 +47,8 @@ impl Core {
         let permissions = app.new_entity(Permissions::start);
         let appearance = app.new_entity(Appearance::start);
         let desktop = app.new_entity(|cx| Desktop::start(cx, &permissions));
-        let clearing = app.new_entity(|cx| Clearing::start(cx, desktop.clone()));
         let settings = app.new_entity(|_cx| Settings::read());
-        let settings = settings; // read before the previews, which consult it
+        let clearing = app.new_entity(|cx| Clearing::start(cx, desktop.clone(), settings.clone()));
         let previews = app.new_entity(|cx| Previews::start(cx, &permissions, &settings));
         let grab = app.new_entity(|cx| Grab::start(cx, desktop.clone(), settings.clone()));
         Core {

@@ -11,6 +11,22 @@ use objc2_core_graphics::{
 };
 use objc2_foundation::{NSNumber, NSString};
 
+/// A side of the screen: which edge something sits against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right,
+}
+
+impl Side {
+    pub fn opposite(self) -> Side {
+        match self {
+            Side::Left => Side::Right,
+            Side::Right => Side::Left,
+        }
+    }
+}
+
 /// More displays than any Mac has ports for.
 const MAX_DISPLAYS: u32 = 16;
 

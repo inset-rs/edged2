@@ -19,24 +19,28 @@ use objc2_app_kit::{
     NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
     NSWindowOrderingMode,
 };
-use objc2_foundation::{NSRect, NSSize};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+use crate::screen::Side;
 use raw_window_handle::RawWindowHandle;
 
 /// Puts the glass material, or the vibrancy blur where the system has no
 /// glass, behind the content of the window `handle` names, rounded by
-/// `corner_radius` on the side away from the screen's edge. Returns false
+/// `corner_radius` on the side away from the screen's `edge`. Returns false
 /// when the handle is not a live AppKit view.
-pub fn install_backdrop(handle: RawWindowHandle, corner_radius: f64) -> bool {
-    install(handle, corner_radius, corner_radius)
+pub fn install_backdrop(handle: RawWindowHandle, corner_radius: f64, edge: Side) -> bool {
+    install(handle, corner_radius, Some(edge))
 }
 
 /// The same, rounded by `corner_radius` at every corner and no wider than
 /// the window: for a window that stands free of any edge.
 pub fn install_rounded_backdrop(handle: RawWindowHandle, corner_radius: f64) -> bool {
-    install(handle, corner_radius, 0.0)
+    install(handle, corner_radius, None)
 }
 
-fn install(handle: RawWindowHandle, corner_radius: f64, past_trailing_edge: f64) -> bool {
+/// `edge` is the screen edge the window stands against, past which the view
+/// reaches by one radius so the corners there are cut square.
+fn install(handle: RawWindowHandle, corner_radius: f64, edge: Option<Side>) -> bool {
     let RawWindowHandle::AppKit(appkit) = handle else {
         return false;
     };
@@ -56,10 +60,17 @@ fn install(handle: RawWindowHandle, corner_radius: f64, past_trailing_edge: f64)
         return false;
     };
     let frame = content.frame();
-    let frame = NSRect::new(
-        frame.origin,
-        NSSize::new(frame.size.width + past_trailing_edge, frame.size.height),
-    );
+    let frame = match edge {
+        Some(Side::Right) => NSRect::new(
+            frame.origin,
+            NSSize::new(frame.size.width + corner_radius, frame.size.height),
+        ),
+        Some(Side::Left) => NSRect::new(
+            NSPoint::new(frame.origin.x - corner_radius, frame.origin.y),
+            NSSize::new(frame.size.width + corner_radius, frame.size.height),
+        ),
+        None => frame,
+    };
     let backdrop = backdrop_view(mtm, frame, corner_radius);
     backdrop.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,

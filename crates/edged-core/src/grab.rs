@@ -181,7 +181,7 @@ fn mode_for(modifiers: Modifiers, settings: &Settings) -> Option<Mode> {
         Some(Mode::Move)
     } else if settings.resize_chord.matches(modifiers) {
         Some(Mode::Resize)
-    } else if settings.arrange_chord.matches(modifiers) {
+    } else if settings.ring_enabled && settings.arrange_chord.matches(modifiers) {
         Some(Mode::Arrange)
     } else {
         None
@@ -392,37 +392,54 @@ mod tests {
     #[test]
     fn the_chords_set_pick_the_mode_and_the_move_chord_wins_a_tie() {
         let settings = Settings::for_test();
-        let option = Modifiers {
-            option: true,
+        let move_modifiers = Modifiers {
+            control: true,
+            shift: true,
             ..Modifiers::default()
         };
-        assert_eq!(mode_for(option, &settings), Some(Mode::Move));
+        let resize_modifiers = Modifiers {
+            option: true,
+            shift: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(mode_for(move_modifiers, &settings), Some(Mode::Move));
+        assert_eq!(mode_for(resize_modifiers, &settings), Some(Mode::Resize));
         assert_eq!(
             mode_for(
                 Modifiers {
-                    control: true,
-                    ..option
-                },
-                &settings
-            ),
-            Some(Mode::Resize)
-        );
-        assert_eq!(
-            mode_for(
-                Modifiers {
-                    shift: true,
-                    ..option
+                    option: true,
+                    ..move_modifiers
                 },
                 &settings
             ),
             None
         );
         assert_eq!(mode_for(Modifiers::default(), &settings), None);
+
         let same = Settings {
             resize_chord: settings.move_chord,
             ..settings
         };
-        assert_eq!(mode_for(option, &same), Some(Mode::Move));
+        assert_eq!(mode_for(move_modifiers, &same), Some(Mode::Move));
+    }
+
+    #[test]
+    fn the_ring_switched_off_leaves_its_chord_unanswered() {
+        let settings = Settings {
+            ring_enabled: false,
+            ..Settings::for_test()
+        };
+        let arrange = Modifiers {
+            control: true,
+            command: true,
+            ..Modifiers::default()
+        };
+        assert_eq!(mode_for(arrange, &settings), None);
+        assert_eq!(
+            mode_for(arrange, &Settings::for_test()),
+            Some(Mode::Arrange)
+        );
     }
 
     #[test]

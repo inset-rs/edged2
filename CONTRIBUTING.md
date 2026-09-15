@@ -16,6 +16,8 @@ Use `cargo inset run -p edged` for interactive testing. Check both panel edges, 
 
 ## Signing and distribution
 
+See [Releases](docs/releases.md) for the version-tag workflow and required GitHub secrets.
+
 `cargo inset run` uses an available Apple Development identity so Accessibility permission can survive rebuilds. A fresh checkout can compile and run tests without a signing identity. Packaging and permission behavior should be tested separately on a developer machine.
 
 Distribution uses a Developer ID Application identity and Apple notarization credentials. Supply these through the environment or your credential store, never tracked files. Building, signing, notarizing, publishing, and changing a user's installed app are separate from the checks above.

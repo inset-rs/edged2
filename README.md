@@ -21,20 +21,17 @@ Accessibility access is required to control windows. Screen Recording access is 
 
 ## Demos
 
-Click a preview to watch the recording.
+### Switch windows
 
-<table>
-  <tr>
-    <th>Switch windows</th>
-    <th>Move and resize</th>
-    <th>Place with the ring</th>
-  </tr>
-  <tr>
-    <td width="33%"><a href="https://edged2.app/videos/demo-panel.mp4"><img src="https://edged2.app/previews/panel.jpg" alt="Watch the window switching demo"></a></td>
-    <td width="33%"><a href="https://edged2.app/videos/demo-resize.mp4"><img src="https://edged2.app/previews/resize.jpg" alt="Watch the move and resize demo"></a></td>
-    <td width="33%"><a href="https://edged2.app/videos/demo-ring.mp4"><img src="https://edged2.app/previews/ring.jpg" alt="Watch the ring demo"></a></td>
-  </tr>
-</table>
+https://edged2.app/videos/demo-panel.mp4
+
+### Move and resize
+
+https://edged2.app/videos/demo-resize.mp4
+
+### Place with the ring
+
+https://edged2.app/videos/demo-ring.mp4
 
 ## Build and run
 

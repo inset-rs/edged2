@@ -19,7 +19,7 @@ inset-animation = "0.3.0"
 inset-embedder-winit = "0.3.0"
 inset-foundation = "0.3.0"
 inset-rendering = "0.3.0"
-inset-winui = { path = "../inset-winui/crates/inset-winui" }
+inset-winui = "0.2.0"
 valo-codec-apple = "0.5.0"
 block2 = "0.6"
 objc2 = "0.6"

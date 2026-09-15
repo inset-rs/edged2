@@ -1276,7 +1276,9 @@ dependencies = [
 
 [[package]]
 name = "inset-winui"
-version = "0.1.0"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37edf98346223bc7d23761096ac19438a123c6e77393c8aff69ca91b9a6cb226"
 dependencies = [
  "inset-animation",
  "inset-embedder",

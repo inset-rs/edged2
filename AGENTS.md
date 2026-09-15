@@ -1,17 +1,21 @@
-# Edged on Inset
+# Working on Edged 2
 
-An implementation of Edged (`/Users/mac/code/Edged`, Swift) with Inset (`../inset-rs`) and the WinUI kit (`../inset-winui`), both used from their checkouts.
+Edged 2 is a macOS app built with published Inset and inset-winui crates. Setup is in [README.md](README.md). An original Swift Edged checkout is useful for historical comparisons but is not required to build.
 
-- `crates/edged-macos` wraps AppKit, the Accessibility API and SkyLight. It is the only crate that may write `unsafe`. Every public type is plain Rust; no Objective-C type crosses its boundary.
-- `crates/edged-core` is the app: entities on `inset-foundation` alone. They own every timer, watcher and subscription, and nothing in them names a widget, a window or a colour. Tests run with `AppCell` and no display.
-- `crates/edged` is the interface. It reads entities in `build`, which subscribes it to their changes, and changes them through their methods from callbacks. It calls `edged-macos` only for its own windows: the glass behind a panel and where the pointer is relative to one. Actions on the desktop go through `Desktop`'s methods, never straight to `edged-macos`.
+## Ownership
 
-`docs/architecture.md` says why the split is drawn there and how the next features fit it.
+- `crates/edged-macos` owns AppKit, Accessibility, ScreenCaptureKit, and SkyLight integration. It is the only crate allowed to use `unsafe`. Objective-C types must not cross its public boundary.
+- `crates/edged-core` owns application state, timers, watchers, and subscriptions through Inset entities. It has no widget or rendering dependencies.
+- `crates/edged` owns widgets and presentation state. Read entities during build and change them through entity methods. Calls to `edged-macos` here are limited to the app's own windows and rendering integration; actions on other apps go through the core model.
 
-When the app needs something Inset does not offer, do not work around it here: write down what the framework would add, in `docs/inset-gaps.md`, with the shape Flutter gives it where Flutter has one, and leave the app in the state that best shows the gap. Framework changes are proposed for review, not made from this repository.
+## Implementation and documentation
 
-```sh
-cargo inset run -p edged
-cargo test --workspace
-cargo clippy --workspace
-```
+Use Inset and inset-winui controls and established mechanisms. If a required framework capability is missing, record the gap and proposed API in [docs/inset-gaps.md](docs/inset-gaps.md), using Flutter's mechanism where applicable. Propose framework changes for review instead of silently adding a workaround.
+
+Leave blank lines between functions and distinct parts of a function. Document non-obvious types, fields, and behavior. In design notes, name the concrete type or feature first, then explain the behavior and reason in ordinary language. Avoid unexplained symbols and invented jargon.
+
+Keep the README short and useful to users and new contributors. Put behavior and intent in `docs/design.md`, ownership and data flow in `docs/architecture.md`, and working instructions here. Archived research is historical evidence, not a current specification.
+
+Run `cargo fmt --all --check`, `cargo test --workspace --locked`, and `cargo clippy --workspace --all-targets --locked -- -D warnings` as appropriate. See [CONTRIBUTING.md](CONTRIBUTING.md) for platform and visual checks.
+
+Do not commit, push, package, sign, notarize, or publish unless the current task authorizes it.

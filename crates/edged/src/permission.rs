@@ -6,7 +6,7 @@ use inset::{
     App, BuildContext, Column, CrossAxisAlignment, EdgeInsetsGeometry, Entity, FontWeight,
     IntoWidget, Listener, Padding, SizedBox, StatelessWidget, Text, WidgetRef,
 };
-use inset_winui::{Button, ButtonStyle, HyperlinkButton};
+use inset_winui::{Button, ButtonStyle};
 
 use crate::theme::Design;
 
@@ -66,11 +66,8 @@ impl StatelessWidget for PermissionView {
                             .style(palette.text(11.0, FontWeight::W400, secondary))
                             .into_widget(),
                         SizedBox::new().height(8.0).into_widget(),
-                        HyperlinkButton::text(
-                            "Quit Edged",
-                            Listener::new(|_app| std::process::exit(0)),
-                        )
-                        .into_widget(),
+                        Button::text("Quit Edged", Listener::new(|_app| std::process::exit(0)))
+                            .into_widget(),
                     ]),
             )
             .into_widget()

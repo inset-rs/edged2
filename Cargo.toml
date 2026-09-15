@@ -15,6 +15,7 @@ unsafe_code = "forbid"
 edged-core = { path = "crates/edged-core" }
 edged-macos = { path = "crates/edged-macos" }
 inset = "0.3.0"
+inset-animation = "0.3.0"
 inset-embedder-winit = "0.3.0"
 inset-foundation = "0.3.0"
 inset-rendering = "0.3.0"

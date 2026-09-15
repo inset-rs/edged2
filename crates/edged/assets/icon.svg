@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Edged — 8% smaller window preview</title>
+  <defs>
+    <linearGradient id="tile" x1="512" y1="48" x2="512" y2="976" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#29B5FF"/>
+      <stop offset=".42" stop-color="#0091FF"/>
+      <stop offset="1" stop-color="#0062F5"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(302 76) rotate(65) scale(850 990)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9EEAFF" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#9EEAFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="512" y1="188" x2="512" y2="836" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".5" stop-color="#E9F6FF"/>
+      <stop offset="1" stop-color="#B9D9FA"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="350" y1="245" x2="640" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16ACFF"/>
+      <stop offset=".48" stop-color="#0089FF"/>
+      <stop offset="1" stop-color="#0062EF"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="696" y1="274" x2="696" y2="750" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9FAFF"/>
+      <stop offset=".42" stop-color="#C2E8FF"/>
+      <stop offset="1" stop-color="#8AC7FC"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="512" y1="48" x2="512" y2="976" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D2F3FF" stop-opacity=".55"/>
+      <stop offset=".35" stop-color="#FFFFFF" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#0044B4" stop-opacity=".3"/>
+    </linearGradient>
+    <filter id="rim-shadow" x="150" y="156" width="740" height="740" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="13" stdDeviation="12" flood-color="#004BC2" flood-opacity=".26"/>
+    </filter>
+    <filter id="inset" x="215" y="215" width="594" height="594" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feOffset in="SourceAlpha" dy="5" result="offset"/>
+      <feGaussianBlur in="offset" stdDeviation="5" result="blur"/>
+      <feComposite in="SourceAlpha" in2="blur" operator="out" result="inner"/>
+      <feFlood flood-color="#0046B2" flood-opacity=".52" result="color"/>
+      <feComposite in="color" in2="inner" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="shadow"/></feMerge>
+    </filter>
+    <filter id="panel-shadow" x="594" y="245" width="211" height="555" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="9" stdDeviation="8" flood-color="#003FB4" flood-opacity=".3"/>
+    </filter>
+  </defs>
+
+  <rect x="48" y="48" width="928" height="928" rx="210" fill="url(#tile)"/>
+  <rect x="48" y="48" width="928" height="928" rx="210" fill="url(#light)"/>
+  <rect x="49.5" y="49.5" width="925" height="925" rx="208.5" stroke="url(#edge)" stroke-width="3"/>
+
+  <g transform="translate(40.96 40.96) scale(0.92)">
+  <g filter="url(#rim-shadow)">
+    <rect x="188" y="188" width="648" height="648" rx="103" fill="url(#rim)"/>
+    <rect x="190" y="190" width="644" height="644" rx="101" stroke="white" stroke-opacity=".58" stroke-width="3"/>
+    <rect x="230" y="230" width="564" height="564" rx="62" fill="url(#screen)" filter="url(#inset)"/>
+    <rect x="229" y="229" width="566" height="566" rx="63" stroke="#0878E6" stroke-opacity=".23" stroke-width="3"/>
+  </g>
+
+  <g filter="url(#panel-shadow)">
+    <rect x="626" y="274" width="140" height="476" rx="42" fill="url(#panel)"/>
+    <rect x="627.5" y="275.5" width="137" height="473" rx="40.5" stroke="white" stroke-opacity=".75" stroke-width="3"/>
+  </g>
+  </g>
+</svg>

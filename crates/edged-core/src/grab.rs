@@ -177,9 +177,9 @@ fn resized(frame: &Frame, corner: Corner, dx: f64, dy: f64) -> Frame {
 /// The mode the keys held ask for, by the chords set; the first of move, resize and
 /// arrange when two are the same. Anything else holds nothing.
 fn mode_for(modifiers: Modifiers, settings: &Settings) -> Option<Mode> {
-    if settings.move_chord.matches(modifiers) {
+    if settings.move_enabled && settings.move_chord.matches(modifiers) {
         Some(Mode::Move)
-    } else if settings.resize_chord.matches(modifiers) {
+    } else if settings.resize_enabled && settings.resize_chord.matches(modifiers) {
         Some(Mode::Resize)
     } else if settings.ring_enabled && settings.arrange_chord.matches(modifiers) {
         Some(Mode::Arrange)
@@ -244,10 +244,7 @@ impl Grab {
     fn keys_changed(&mut self, cx: &mut Context<Grab>, modifiers: Modifiers) {
         let wanted = {
             let settings = self.settings.read(cx);
-            settings
-                .grab_enabled
-                .then(|| mode_for(modifiers, settings))
-                .flatten()
+            mode_for(modifiers, settings)
         };
         match (&mut self.hold, wanted) {
             (None, Some(mode)) => self.take_hold(cx, mode),
@@ -308,7 +305,12 @@ impl Grab {
 
     fn moved(&mut self, cx: &mut Context<Grab>, pointer: (f64, f64)) {
         self.pointer = pointer;
-        let stays_on_screen = self.settings.read(cx).stays_on_screen;
+        let settings = self.settings.read(cx);
+        let stays_on_screen = match self.hold.as_ref().map(|hold| hold.mode) {
+            Some(Mode::Move) => settings.move_stays_on_screen,
+            Some(Mode::Resize) => settings.resize_stays_on_screen,
+            _ => false,
+        };
         // The screen the pointer is on bounds the window; crossing to another display
         // takes the window along.
         let screen_under_pointer = self
@@ -422,6 +424,31 @@ mod tests {
             ..settings
         };
         assert_eq!(mode_for(move_modifiers, &same), Some(Mode::Move));
+    }
+
+    #[test]
+    fn move_resize_and_ring_are_independently_enabled() {
+        let mut settings = Settings::for_test();
+        settings.resize_chord = settings.move_chord;
+        let modifiers = Modifiers {
+            control: true,
+            shift: true,
+            ..Modifiers::default()
+        };
+        settings.move_enabled = false;
+        assert_eq!(mode_for(modifiers, &settings), Some(Mode::Resize));
+        settings.resize_enabled = false;
+        assert_eq!(mode_for(modifiers, &settings), None);
+        let ring = Modifiers {
+            control: true,
+            command: true,
+            ..Modifiers::default()
+        };
+        assert_eq!(mode_for(ring, &settings), Some(Mode::Arrange));
+        settings.move_enabled = true;
+        assert_eq!(mode_for(modifiers, &settings), Some(Mode::Move));
+        settings.ring_enabled = false;
+        assert_eq!(mode_for(ring, &settings), None);
     }
 
     #[test]

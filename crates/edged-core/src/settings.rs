@@ -114,11 +114,13 @@ pub struct SettingsRequested;
 
 /// The stored keys of the hold: whether it is on, and the chords that move, resize and
 /// arrange.
-const GRAB_KEY: &str = "grab";
+const MOVE_ENABLED_KEY: &str = "move_enabled";
+const RESIZE_ENABLED_KEY: &str = "resize_enabled";
 const MOVE_CHORD_KEY: &str = "grab_move";
 const RESIZE_CHORD_KEY: &str = "grab_resize";
 const ARRANGE_CHORD_KEY: &str = "grab_arrange";
-const STAYS_ON_SCREEN_KEY: &str = "grab_stay_on_screen";
+const MOVE_STAYS_ON_SCREEN_KEY: &str = "move_stay_on_screen";
+const RESIZE_STAYS_ON_SCREEN_KEY: &str = "resize_stay_on_screen";
 const RING_KEY: &str = "ring";
 /// The stored key of a ring direction's zone.
 fn ring_zone_key(direction: Direction) -> String {
@@ -137,8 +139,10 @@ pub struct Settings {
     /// How the panel comes out.
     pub panel_reveal: PanelReveal,
     pub preview_trigger: PreviewTrigger,
-    /// Whether holding the chords below moves and resizes the window under the pointer.
-    pub grab_enabled: bool,
+    /// Whether the move shortcut can start a hold.
+    pub move_enabled: bool,
+    /// Whether the resize shortcut can start a hold.
+    pub resize_enabled: bool,
     /// The keys that move the window under the pointer while held.
     pub move_chord: Chord,
     /// The keys that resize it while held.
@@ -149,8 +153,10 @@ pub struct Settings {
     pub ring_enabled: bool,
     /// The keys that show the ring of zones the window under the pointer can be put in.
     pub arrange_chord: Chord,
-    /// Whether a moved or resized window stops at the screen's edge.
-    pub stays_on_screen: bool,
+    /// Whether moving stops at the screen edge.
+    pub move_stays_on_screen: bool,
+    /// Whether resizing stops at the screen edge.
+    pub resize_stays_on_screen: bool,
     /// The zone each direction of the ring picks.
     pub ring_zones: RingZones,
 }
@@ -174,13 +180,15 @@ impl Settings {
             panel_side: Side::Right,
             panel_reveal: PanelReveal::Unfold,
             preview_trigger: PreviewTrigger::Hover,
-            grab_enabled: true,
+            move_enabled: true,
+            resize_enabled: true,
             move_chord: DEFAULT_MOVE_CHORD,
             resize_chord: DEFAULT_RESIZE_CHORD,
             resize_corner: ResizeCorner::BottomRight,
             ring_enabled: true,
             arrange_chord: DEFAULT_ARRANGE_CHORD,
-            stays_on_screen: true,
+            move_stays_on_screen: true,
+            resize_stays_on_screen: true,
             ring_zones: Direction::default_zones(),
         }
     }
@@ -202,7 +210,8 @@ impl Settings {
                 .as_deref()
                 .and_then(PreviewTrigger::from_stored)
                 .unwrap_or(PreviewTrigger::CommandKey),
-            grab_enabled: edged_macos::read_default(GRAB_KEY).as_deref() != Some("off"),
+            move_enabled: edged_macos::read_default(MOVE_ENABLED_KEY).as_deref() != Some("off"),
+            resize_enabled: edged_macos::read_default(RESIZE_ENABLED_KEY).as_deref() != Some("off"),
             move_chord: chord_default(MOVE_CHORD_KEY, DEFAULT_MOVE_CHORD),
             resize_chord: chord_default(RESIZE_CHORD_KEY, DEFAULT_RESIZE_CHORD),
             resize_corner: edged_macos::read_default(ResizeCorner::KEY)
@@ -211,7 +220,10 @@ impl Settings {
                 .unwrap_or(ResizeCorner::BottomRight),
             ring_enabled: edged_macos::read_default(RING_KEY).as_deref() != Some("off"),
             arrange_chord: chord_default(ARRANGE_CHORD_KEY, DEFAULT_ARRANGE_CHORD),
-            stays_on_screen: edged_macos::read_default(STAYS_ON_SCREEN_KEY).as_deref()
+            move_stays_on_screen: edged_macos::read_default(MOVE_STAYS_ON_SCREEN_KEY).as_deref()
+                != Some("off"),
+            resize_stays_on_screen: edged_macos::read_default(RESIZE_STAYS_ON_SCREEN_KEY)
+                .as_deref()
                 != Some("off"),
             ring_zones: Direction::CLOCKWISE.map(|direction| {
                 match edged_macos::read_default(&ring_zone_key(direction)) {
@@ -223,12 +235,23 @@ impl Settings {
         }
     }
 
-    pub fn set_stays_on_screen(&mut self, cx: &mut Context<Settings>, stays: bool) {
-        if self.stays_on_screen == stays {
+    /// Controls whether moving windows can cross the screen edge.
+    pub fn set_move_stays_on_screen(&mut self, cx: &mut Context<Settings>, stays: bool) {
+        if self.move_stays_on_screen == stays {
             return;
         }
-        self.stays_on_screen = stays;
-        edged_macos::write_default(STAYS_ON_SCREEN_KEY, if stays { "on" } else { "off" });
+        self.move_stays_on_screen = stays;
+        edged_macos::write_default(MOVE_STAYS_ON_SCREEN_KEY, if stays { "on" } else { "off" });
+        cx.notify();
+    }
+
+    /// Controls whether resizing windows can extend past the screen edge.
+    pub fn set_resize_stays_on_screen(&mut self, cx: &mut Context<Settings>, stays: bool) {
+        if self.resize_stays_on_screen == stays {
+            return;
+        }
+        self.resize_stays_on_screen = stays;
+        edged_macos::write_default(RESIZE_STAYS_ON_SCREEN_KEY, if stays { "on" } else { "off" });
         cx.notify();
     }
 
@@ -311,12 +334,23 @@ impl Settings {
         cx.notify();
     }
 
-    pub fn set_grab_enabled(&mut self, cx: &mut Context<Settings>, enabled: bool) {
-        if self.grab_enabled == enabled {
+    /// Enables pointer-driven window movement independently of resizing.
+    pub fn set_move_enabled(&mut self, cx: &mut Context<Settings>, enabled: bool) {
+        if self.move_enabled == enabled {
             return;
         }
-        self.grab_enabled = enabled;
-        edged_macos::write_default(GRAB_KEY, if enabled { "on" } else { "off" });
+        self.move_enabled = enabled;
+        edged_macos::write_default(MOVE_ENABLED_KEY, if enabled { "on" } else { "off" });
+        cx.notify();
+    }
+
+    /// Enables pointer-driven window resizing independently of movement.
+    pub fn set_resize_enabled(&mut self, cx: &mut Context<Settings>, enabled: bool) {
+        if self.resize_enabled == enabled {
+            return;
+        }
+        self.resize_enabled = enabled;
+        edged_macos::write_default(RESIZE_ENABLED_KEY, if enabled { "on" } else { "off" });
         cx.notify();
     }
 

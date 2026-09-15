@@ -18,6 +18,7 @@ path = "src/main.rs"
 edged-core.workspace = true
 edged-macos.workspace = true
 inset.workspace = true
+inset-animation.workspace = true
 # The preview names its host: the picture's buffer becomes a texture on the host's device.
 inset-embedder-winit.workspace = true
 inset-rendering.workspace = true
@@ -35,3 +36,14 @@ background_app = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+inset-embedder = "0.3.0"
+inset-foundation.workspace = true
+inset-gestures = "0.3.0"
+inset-painting = "0.3.0"
+inset-scheduler = "0.3.0"
+inset-widgets = "0.3.0"
+wgpu = "30"
+pollster = "0.4"
+png = "0.17"

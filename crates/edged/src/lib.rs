@@ -15,6 +15,10 @@ mod sections;
 mod settings;
 mod target;
 mod theme;
+
+#[cfg(test)]
+mod test_support;
+
 mod windows;
 
 use edged_core::Core;

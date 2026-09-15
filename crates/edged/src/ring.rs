@@ -86,11 +86,11 @@ impl StatelessWidget for RingContent {
 }
 
 /// Paints the disc, the lit sector, and each direction's zone icon.
-struct RingPainter {
-    zones: RingZones,
-    chosen: Option<Direction>,
-    accent: Color,
-    on_accent: Color,
+pub(super) struct RingPainter {
+    pub zones: RingZones,
+    pub chosen: Option<Direction>,
+    pub accent: Color,
+    pub on_accent: Color,
 }
 
 impl CustomPainter for RingPainter {

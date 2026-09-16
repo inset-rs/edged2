@@ -257,24 +257,30 @@ impl Previews {
         }
         self.listing = true;
         let this = cx.weak_entity();
-        let async_app = cx.to_async();
-        edged_macos::capturable_windows(move |targets| {
-            async_app.post(move |app| {
-                let Some(previews) = this.upgrade() else {
-                    return;
-                };
-                previews.update(app, |previews, cx| {
-                    previews.listing = false;
-                    previews.listed = Some(Instant::now());
-                    previews.targets = targets;
-                    if let Some(rest) = previews.showing.clone()
-                        && previews.targets.contains_key(&rest.window.id)
-                    {
-                        previews.capture(cx, &rest);
-                    }
-                });
+        cx.spawn(async move |cx| {
+            let targets = edged_macos::capturable_windows().await;
+            let Some(previews) = this.upgrade() else {
+                return;
+            };
+            cx.update(|app| {
+                previews.update(app, |previews, cx| previews.targets_listed(cx, targets));
             });
         });
+    }
+
+    fn targets_listed(
+        &mut self,
+        cx: &mut Context<Previews>,
+        targets: HashMap<WindowId, CaptureTarget>,
+    ) {
+        self.listing = false;
+        self.listed = Some(Instant::now());
+        self.targets = targets;
+        if let Some(rest) = self.showing.clone()
+            && self.targets.contains_key(&rest.window.id)
+        {
+            self.capture(cx, &rest);
+        }
     }
 
     fn capture(&mut self, cx: &mut Context<Previews>, rest: &Rest) {
@@ -285,22 +291,24 @@ impl Previews {
         let (width, height) = picture_size(rest);
         self.in_flight.insert(id);
         let this = cx.weak_entity();
-        let async_app = cx.to_async();
-        edged_macos::capture_window(&target, width, height, move |picture| {
-            async_app.post(move |app| {
-                let Some(previews) = this.upgrade() else {
-                    return;
-                };
-                previews.update(app, |previews, cx| {
-                    previews.in_flight.remove(&id);
-                    let Some(picture) = picture else {
-                        return;
-                    };
-                    previews.keep(id, picture);
-                    cx.notify();
-                });
+        cx.spawn(async move |cx| {
+            let picture = edged_macos::capture_window(target, width, height).await;
+            let Some(previews) = this.upgrade() else {
+                return;
+            };
+            cx.update(|app| {
+                previews.update(app, |previews, cx| previews.captured(cx, id, picture));
             });
         });
+    }
+
+    fn captured(&mut self, cx: &mut Context<Previews>, id: WindowId, picture: Option<Picture>) {
+        self.in_flight.remove(&id);
+        let Some(picture) = picture else {
+            return;
+        };
+        self.keep(id, picture);
+        cx.notify();
     }
 
     /// Keeps a picture, letting the oldest go once there are too many.

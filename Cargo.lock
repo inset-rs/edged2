@@ -193,6 +193,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
 name = "bit-set"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -328,9 +334,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.4.5"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80"
+checksum = "a3eb0f42d6c360dc3f8a821f6bf2fdea7f72bfd36b3076eb0e6d1e9e0752fff4"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -546,6 +552,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.13.2",
+ "block2 0.6.2",
+ "libc",
  "objc2 0.6.4",
 ]
 
@@ -581,7 +589,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "edged"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "edged-core",
  "edged-macos",
@@ -594,6 +602,7 @@ dependencies = [
  "inset-painting",
  "inset-rendering",
  "inset-scheduler",
+ "inset-test",
  "inset-widgets",
  "inset-winui",
  "png 0.17.16",
@@ -604,17 +613,22 @@ dependencies = [
 
 [[package]]
 name = "edged-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "edged-macos",
  "inset-foundation",
+ "semver",
+ "serde",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]
 name = "edged-macos"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "block2 0.6.2",
+ "futures-channel",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-application-services",
@@ -827,6 +841,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
+name = "futures-channel"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
+dependencies = [
+ "futures-core",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -858,6 +881,17 @@ checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
 dependencies = [
  "rustix 1.1.4",
  "windows-link",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "wasi",
 ]
 
 [[package]]
@@ -1011,6 +1045,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 
 [[package]]
+name = "http"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "918d3568bebf352712bc2ef3d46a8bcf1a75b373be6539de198e9105cbbf9ce0"
+dependencies = [
+ "bytes",
+ "itoa",
+]
+
+[[package]]
+name = "httparse"
+version = "1.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+
+[[package]]
 name = "image"
 version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1051,9 +1101,9 @@ dependencies = [
 
 [[package]]
 name = "inset"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88903b74b7332deb88fee4e26bb88c3604a5ea0df4785f16238c2fb77c1129b2"
+checksum = "933a3129c5435e37f7f26d2775e74c2a0920666fa4ccc55c8b4c3a1b0380e2ce"
 dependencies = [
  "inset-embedder",
  "inset-embedder-default",
@@ -1068,9 +1118,9 @@ dependencies = [
 
 [[package]]
 name = "inset-animation"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cecc8f70b6ea14282e4733715538b474533f26ab92beb9b5f099b062a39d5b79"
+checksum = "6b6e222f17668d5370527f74e96d9272593254b2661dc0d0bc241450f64d66b6"
 dependencies = [
  "inset-embedder",
  "inset-foundation",
@@ -1080,9 +1130,9 @@ dependencies = [
 
 [[package]]
 name = "inset-embedder"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15ae5ed9b763488305a123de905f5c3d751611d698d763aa28c21d547daedda0"
+checksum = "fa4d1dead11a3eeee27790f189a72a8c334e07682c93d2320a3a77c24f2cb30a"
 dependencies = [
  "indexmap",
  "raw-window-handle",
@@ -1094,9 +1144,9 @@ dependencies = [
 
 [[package]]
 name = "inset-embedder-default"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94e39c9fa2812989a5ec13433cc924b9a4d39c92d183fcc3127fb3860c8065cf"
+checksum = "27eb60c4a24d687eecc776ea522315c90aabaa5ca65a7a105d42b49bfdc2f9e7"
 dependencies = [
  "inset-embedder",
  "inset-embedder-web",
@@ -1105,9 +1155,9 @@ dependencies = [
 
 [[package]]
 name = "inset-embedder-web"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72665c7e2902d557a5ea5673d39bf938881e59b5db159fba5badc59b7453ba29"
+checksum = "f9110fe2c3a295fd60a54cdca682d5ee4fd13b84927218651a975e3fb0b55999"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.3.4",
@@ -1123,11 +1173,12 @@ dependencies = [
 
 [[package]]
 name = "inset-embedder-winit"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abf36cbb9f66c9c10a7b9bceebcad05f0b94801d2b6d79f3095260d4ad0b8119"
+checksum = "7a3d4cfd22064a69c2ea602678b949949b6de1624cf8b9660fc76ae85161cfff"
 dependencies = [
  "arboard",
+ "dispatch2",
  "inset-embedder",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -1144,9 +1195,9 @@ dependencies = [
 
 [[package]]
 name = "inset-foundation"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d57933fa46a84cfdb620e346d9594a590f25813f79407e7aed566c1cdb9246b6"
+checksum = "f1d57bf51935a859ac03392082f82dac9942ea4bb5f15616c7e58371cf2f0bb8"
 dependencies = [
  "async-task",
  "indexmap",
@@ -1156,9 +1207,9 @@ dependencies = [
 
 [[package]]
 name = "inset-gestures"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe80e84f595e90aeadb4b033859fe2f4c97f83570d1f303e050cf49bdc681bda"
+checksum = "d72a204435b58c2d0126766a438bc52c8335e0f79c231ce40a0df274424909cd"
 dependencies = [
  "indexmap",
  "inset-embedder",
@@ -1169,9 +1220,9 @@ dependencies = [
 
 [[package]]
 name = "inset-macros"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee7142812bdd08d31c7e3af98f8cbc4f4c267204a9bcfdb28a87662930889b45"
+checksum = "48d0ab10527c0f70da2a9c192a9b12743327bb4eda437bf62b835ef10c50bf54"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1180,9 +1231,9 @@ dependencies = [
 
 [[package]]
 name = "inset-painting"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e0358ddb92390dff04261097c094d8193df979d445c52e99e371f795e6d5289"
+checksum = "d5f22fc905dd1efc0238d31ea80b1218ca7a6cd6ccbfa1d00f0008d351158433"
 dependencies = [
  "indexmap",
  "inset-embedder",
@@ -1192,18 +1243,18 @@ dependencies = [
 
 [[package]]
 name = "inset-physics"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d079b3353007a15f32c6762f11bdb704f61781614ec4fe7d4d228a4d603b57c"
+checksum = "de688754eda216b6ee8e8e9ffc4754bec684ab8b4f7214715423c1d7ccedd5ea"
 dependencies = [
  "inset-embedder",
 ]
 
 [[package]]
 name = "inset-rendering"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3513299cef6a6efdab313865053c17e2fdb01a434d2ad527e5eccd5dcf1e8639"
+checksum = "48e549b4945246c340659dba2287d1616553cde4e3f1ad6bc0465a3ec933491a"
 dependencies = [
  "indexmap",
  "inset-animation",
@@ -1218,9 +1269,9 @@ dependencies = [
 
 [[package]]
 name = "inset-scheduler"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fac62775599357ed87670209cbcc7307e923f15630c32ac2eba7e3d84631a57"
+checksum = "34c1baf51fbe8e75107af3a1745ff9c2d5cdb13bf8afd3f44266344054f03aaf"
 dependencies = [
  "indexmap",
  "inset-embedder",
@@ -1229,9 +1280,9 @@ dependencies = [
 
 [[package]]
 name = "inset-services"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9266377bfc27d2f39861b2e59f73a6118f6a8c7ffca2d76059ae02892b9fc801"
+checksum = "1b68260898e33b3bda436b5f5e3ffcb7454e71385d8a844a136c1c4f171cc097"
 dependencies = [
  "indexmap",
  "inset-embedder",
@@ -1243,9 +1294,9 @@ dependencies = [
 
 [[package]]
 name = "inset-shell"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07d51c28a8f148651c29abfd3cf0c2bfc632c68c07743791174dee88a54112e9"
+checksum = "da97f6d5cbf9e3b9d96a068bafb921251f330e6c4d2ad083b1cc5e2dfcf783f4"
 dependencies = [
  "inset-embedder",
  "inset-foundation",
@@ -1257,10 +1308,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "inset-widgets"
-version = "0.3.0"
+name = "inset-test"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2240d20b144047af6790ef99c04eedf97c2d3edcdba115e4d08222d0800f8e3a"
+checksum = "9c082cdc611ebdd778f16c87f84bc9eb3c670e9611bdafb9a507eea62977a315"
+dependencies = [
+ "inset-embedder",
+]
+
+[[package]]
+name = "inset-widgets"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad89594f99fd8cbc73e9282764f35f2c28dafbf82aa50cc8f521d9e9d96ec13b"
 dependencies = [
  "indexmap",
  "inset-animation",
@@ -1276,9 +1336,9 @@ dependencies = [
 
 [[package]]
 name = "inset-winui"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37edf98346223bc7d23761096ac19438a123c6e77393c8aff69ca91b9a6cb226"
+checksum = "6705f276d7e901cb3451c30c712e7e8ae64ade8e734c241d20111e2a1b014719"
 dependencies = [
  "inset-animation",
  "inset-embedder",
@@ -1299,6 +1359,12 @@ checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
+
+[[package]]
+name = "itoa"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jni"
@@ -2525,6 +2591,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "ring"
+version = "0.17.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "getrandom 0.2.17",
+ "libc",
+ "untrusted",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "roxmltree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2575,6 +2655,41 @@ dependencies = [
  "libc",
  "linux-raw-sys 0.12.1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rustls"
+version = "0.23.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+dependencies = [
+ "log",
+ "once_cell",
+ "ring",
+ "rustls-pki-types",
+ "rustls-webpki",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "rustls-pki-types"
+version = "1.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
+name = "rustls-webpki"
+version = "0.103.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+dependencies = [
+ "ring",
+ "rustls-pki-types",
+ "untrusted",
 ]
 
 [[package]]
@@ -2651,6 +2766,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.5",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.151"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+dependencies = [
+ "itoa",
+ "memchr",
+ "serde",
+ "serde_core",
+ "zmij",
 ]
 
 [[package]]
@@ -2776,6 +2904,12 @@ name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6637bab7722d379c8b41ba849228d680cc12d0a45ba1fa2b48f2a30577a06731"
+
+[[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "svg_fmt"
@@ -2906,18 +3040,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.13.2"
+version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cf0ded5c4e56918d8f8a339e1bb67d038d3bc6d144ac407904015ba2e4cde9b"
-dependencies = [
- "tinyvec_macros",
-]
-
-[[package]]
-name = "tinyvec_macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "toml_datetime"
@@ -3027,6 +3152,46 @@ name = "unicode-width"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
+
+[[package]]
+name = "untrusted"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
+name = "ureq"
+version = "3.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a7ac20be9b7726e0bbdbf974c059676d9acb1cd414961f570a4e8231cacd7fc"
+dependencies = [
+ "base64",
+ "log",
+ "percent-encoding",
+ "rustls",
+ "rustls-pki-types",
+ "ureq-proto",
+ "utf8-zero",
+ "webpki-roots",
+]
+
+[[package]]
+name = "ureq-proto"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b0809a01d1ca5a51ca70db32bb2a19157582a526505ef3c19e3b343a59aa5ad"
+dependencies = [
+ "base64",
+ "http",
+ "httparse",
+ "log",
+]
+
+[[package]]
+name = "utf8-zero"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8c0a043c9540bae7c578c88f91dda8bd82e59ae27c21baca69c8b191aaf5a6e"
 
 [[package]]
 name = "valo"
@@ -3181,6 +3346,12 @@ dependencies = [
  "same-file",
  "winapi-util",
 ]
+
+[[package]]
+name = "wasi"
+version = "0.11.1+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasip2"
@@ -3373,6 +3544,15 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]
@@ -4007,10 +4187,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "zlib-rs"
-version = "0.6.7"
+name = "zeroize"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34b31d188d9d685a4f9c7b46d6e36631b07058d2cfe190267adce54dc230bf12"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
+
+[[package]]
+name = "zmij"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zune-core"

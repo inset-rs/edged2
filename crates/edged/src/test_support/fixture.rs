@@ -3,71 +3,35 @@
 use super::{gpu, view::CaptureView};
 use inset_embedder::valo::Context;
 use inset_embedder::{
-    Clipboard, FontSource, Offset, Platform, PointerChange, PointerData, PointerDataPacket,
-    PointerDeviceKind, SystemFontSource, TargetPlatform, ViewId, ViewRef,
+    Clipboard, Offset, PointerChange, PointerData, PointerDataPacket, PointerDeviceKind,
+    SystemFontSource, TargetPlatform,
 };
 use inset_foundation::{App, AppCell};
 use inset_gestures::GestureBinding;
 use inset_rendering::RenderParagraph;
 use inset_scheduler::SchedulerBinding;
+use inset_test::TestPlatform;
 use inset_widgets::{AnyElement, WidgetsBinding};
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-struct Host {
-    view: Rc<CaptureView>,
+/// In-memory platform clipboard for headless editing tests.
+#[derive(Default)]
+struct MemoryClipboard(RefCell<Option<String>>);
 
-    /// In-memory platform clipboard for headless editing tests.
-    clipboard: RefCell<Option<String>>,
-}
-
-impl Clipboard for Host {
+impl Clipboard for MemoryClipboard {
     fn set_text(&self, text: &str) {
-        *self.clipboard.borrow_mut() = Some(text.to_owned());
+        *self.0.borrow_mut() = Some(text.to_owned());
     }
 
     fn text(&self) -> Option<String> {
-        self.clipboard.borrow().clone()
+        self.0.borrow().clone()
     }
 
     fn has_strings(&self) -> bool {
-        self.clipboard
+        self.0
             .borrow()
             .as_ref()
             .is_some_and(|text| !text.is_empty())
-    }
-}
-
-impl Platform for Host {
-    fn clipboard(&self) -> Option<&dyn Clipboard> {
-        Some(self)
-    }
-
-    fn target_platform(&self) -> TargetPlatform {
-        TargetPlatform::MacOS
-    }
-
-    fn request_frame(&self) {}
-
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
-    }
-
-    fn wake_at(&self, _deadline: std::time::Instant) {}
-
-    fn views(&self) -> Vec<ViewRef> {
-        vec![self.view.clone()]
-    }
-
-    fn view(&self, id: ViewId) -> Option<ViewRef> {
-        (id == ViewId(0)).then(|| self.view.clone() as ViewRef)
-    }
-
-    fn implicit_view(&self) -> Option<ViewRef> {
-        Some(self.view.clone())
-    }
-
-    fn font_source(&self) -> Option<Box<dyn FontSource>> {
-        Some(Box::new(SystemFontSource::platform()))
     }
 }
 /// Mounts an arbitrary application with simulated time and pointer input.
@@ -97,10 +61,12 @@ impl Fixture {
             renderer: RefCell::new(Context::new(device, queue)),
             pixels: RefCell::new(Vec::new()),
         });
-        let cell = AppCell::with_platform(Rc::new(Host {
-            view: view.clone(),
-            clipboard: RefCell::new(None),
-        }));
+        let platform = TestPlatform::new()
+            .on(TargetPlatform::MacOS)
+            .with_view(view.clone())
+            .with_clipboard(Rc::new(MemoryClipboard::default()))
+            .with_font_source(|| Box::new(SystemFontSource::platform()));
+        let cell = AppCell::with_platform(Rc::new(platform));
         {
             let mut app = cell.borrow_mut();
             inset_painting::PaintingBinding::instance(&mut app).install_fonts(&mut app, |fonts| {

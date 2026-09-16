@@ -156,6 +156,12 @@ pub fn edged_menu(app: &mut App, core: &Core) {
         });
     }
     menu.separator();
+    if let Some(version) = core.updates.read(app).latest.clone() {
+        let updates = core.updates.clone();
+        menu.item(format!("Download Edged 2 {version}…"), move |app| {
+            updates.update(app, |updates, cx| updates.download(cx));
+        });
+    }
     menu.item("Settings…", {
         let settings = core.settings.clone();
         move |app| settings.update(app, |settings, cx| settings.request_window(cx))

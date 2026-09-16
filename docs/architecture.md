@@ -27,6 +27,7 @@ Entities call `notify` for changed state and emit typed events for transitions. 
 | `Clearing` | Keeping windows clear of visible panel strips |
 | `Previews` | Hover selection, capture scheduling, and retained window pictures |
 | `Grab` | Shortcut-driven movement, resizing, and ring selection |
+| `Updates` | Daily release checks, version comparison, and update availability |
 
 ## Interface and native windows
 

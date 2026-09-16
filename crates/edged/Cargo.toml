@@ -38,12 +38,13 @@ background_app = true
 workspace = true
 
 [dev-dependencies]
-inset-embedder = "0.3.0"
+inset-embedder = "0.4.0"
 inset-foundation.workspace = true
-inset-gestures = "0.3.0"
-inset-painting = "0.3.0"
-inset-scheduler = "0.3.0"
-inset-widgets = "0.3.0"
+inset-gestures = "0.4.0"
+inset-painting = "0.4.0"
+inset-scheduler = "0.4.0"
+inset-widgets = "0.4.0"
+inset-test = "0.4.0"
 wgpu = "30"
 pollster = "0.4"
 png = "0.17"

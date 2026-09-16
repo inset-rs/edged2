@@ -49,7 +49,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Install Inset CLI
-        run: cargo install inset-cli --version 0.3.0 --locked
+        run: cargo install inset-cli --version 0.4.0 --locked
 
       - name: Build, sign, and notarize
         env:

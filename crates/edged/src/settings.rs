@@ -22,6 +22,7 @@ pub const WINDOW_SIZE: [f64; 2] = [960.0, 640.0];
 const PANE_WIDTH: f64 = 180.0;
 const PAGE_PADDING: f64 = 28.0;
 const GENERAL: &str = "general";
+const ABOUT: &str = "about";
 const PANEL: &str = "panel";
 const PREVIEWS: &str = "previews";
 const MOVE: &str = "move";
@@ -177,6 +178,7 @@ impl State for SettingsPagesState {
                     "Hold the shortcut, move in a direction, then release.",
                     Some(settings.ring_enabled),
                 ),
+                ABOUT => ("About", "Edged 2", None),
                 _ => ("General", "Startup and access.", None),
             }
         };
@@ -190,6 +192,7 @@ impl State for SettingsPagesState {
             8.0,
         );
         let options = match section.as_str() {
+            ABOUT => about_page(app, &core, colors),
             PANEL => panel_page(app, &core, colors),
             PREVIEWS => previews_page(self, app, &core, colors),
             MOVE => move_page(app, &core, colors),
@@ -211,7 +214,7 @@ impl State for SettingsPagesState {
         } else {
             options
         };
-        let body = if section == GENERAL {
+        let body = if section == GENERAL || section == ABOUT {
             options
         } else {
             let config = Configuration::new(
@@ -258,6 +261,7 @@ impl State for SettingsPagesState {
                 item(MOVE, "Move", FluentSymbol::Layer),
                 item(RESIZE, "Resize", FluentSymbol::Tab),
                 item(RING, "Ring", FluentSymbol::Circle),
+                item(ABOUT, "About", FluentSymbol::Info),
             ],
             Some(section),
             move |app, args| {
@@ -393,6 +397,66 @@ fn permission_row(
         .into_widget()
     };
     row(label, control, colors)
+}
+
+/// Update state belongs to the core entity; the controls only issue requests.
+fn updates_section(app: &mut App, core: &Core, colors: Colors) -> WidgetRef {
+    let updates = core.updates.read(app);
+    let status = if updates.checked && updates.latest.is_none() {
+        format!("Installed: {} · Up to date", edged_core::CURRENT_VERSION)
+    } else {
+        format!("Installed: {}", edged_core::CURRENT_VERSION)
+    };
+    let automatic = updates.automatic;
+    let checking = updates.checking;
+    let latest = updates.latest.clone();
+    let error = updates.error.clone();
+    let model = core.updates.clone();
+    let action = if let Some(version) = latest {
+        Button::text(
+            format!("Download {version}"),
+            Listener::new(move |app| {
+                model.update(app, |updates, cx| updates.download(cx));
+            }),
+        )
+        .into_widget()
+    } else {
+        Button::text(
+            if checking {
+                "Checking…"
+            } else {
+                "Check for updates"
+            },
+            Listener::new(move |app| {
+                model.update(app, |updates, cx| updates.check(cx));
+            }),
+        )
+        .is_enabled(!checking)
+        .into_widget()
+    };
+    let model = core.updates.clone();
+    let mut rows = vec![setting_row("Version", action, Some(&status), colors)];
+    if let Some(error) = error {
+        rows.push(muted(&error, colors.secondary));
+    }
+    rows.push(row(
+        "Automatically check for updates",
+        switch(automatic, move |app, enabled| {
+            model.update(app, |updates, cx| updates.set_automatic(cx, enabled));
+        }),
+        colors,
+    ));
+    column(rows, 0.0)
+}
+
+fn about_page(app: &mut App, core: &Core, colors: Colors) -> WidgetRef {
+    Align::new()
+        .alignment(Alignment::TOP_LEFT.into())
+        .child(
+            ConstrainedBox::new(BoxConstraints::new().max_width(520.0))
+                .child(updates_section(app, core, colors)),
+        )
+        .into_widget()
 }
 
 fn general_page(app: &mut App, core: &Core, colors: Colors) -> WidgetRef {

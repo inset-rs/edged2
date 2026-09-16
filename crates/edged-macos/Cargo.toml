@@ -25,3 +25,4 @@ objc2-core-media = { workspace = true, features = ["CMSampleBuffer", "objc2-core
 objc2-core-video = { workspace = true, features = ["CVPixelBuffer"] }
 objc2-service-management = { workspace = true, features = ["SMAppService"] }
 raw-window-handle.workspace = true
+futures-channel = "0.3"

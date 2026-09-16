@@ -12,6 +12,7 @@ mod permissions;
 mod previews;
 mod settings;
 mod shortcut;
+mod updates;
 mod zone;
 
 use inset_foundation::{App, Entity};
@@ -24,6 +25,7 @@ pub use permissions::{Granted, Permission, Permissions};
 pub use previews::{Preview, Previews, Rest};
 pub use settings::{PanelReveal, PreviewTrigger, ResizeCorner, Settings, SettingsRequested};
 pub use shortcut::{Chord, Key};
+pub use updates::{CURRENT_VERSION, Updates};
 pub use zone::{Direction, RingZones, Zone};
 
 /// Every entity the app runs on, started together and handed to the interface.
@@ -35,6 +37,8 @@ pub struct Core {
     pub settings: Entity<Settings>,
     pub previews: Entity<Previews>,
     pub grab: Entity<Grab>,
+    /// Release checks and the latest available update.
+    pub updates: Entity<Updates>,
     /// Runs on its own; nothing reads it.
     _clearing: Entity<Clearing>,
 }
@@ -51,6 +55,7 @@ impl Core {
         let clearing = app.new_entity(|cx| Clearing::start(cx, desktop.clone(), settings.clone()));
         let previews = app.new_entity(|cx| Previews::start(cx, &permissions, &settings));
         let grab = app.new_entity(|cx| Grab::start(cx, desktop.clone(), settings.clone()));
+        let updates = app.new_entity(Updates::start);
         Core {
             desktop,
             permissions,
@@ -58,6 +63,7 @@ impl Core {
             settings,
             previews,
             grab,
+            updates,
             _clearing: clearing,
         }
     }

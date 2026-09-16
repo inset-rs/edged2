@@ -32,10 +32,15 @@ Defaults are Control–Shift for Move, Option–Shift for Resize, and Control–
 
 ## Settings and demonstrations
 
-Settings are grouped into General, Panel, Previews, Move, Resize, and Ring. Disabled features retain their configured values. Ring assignment dropdowns open at the direction being edited and show destination diagrams.
+Settings are grouped into General, Panel, Previews, Move, Resize, Ring, and About. Disabled features retain their configured values. Ring assignment dropdowns open at the direction being edited and show destination diagrams.
 
 The desktop demonstrations illustrate current settings without operating on real windows. Key-hold cues and pointer movement must match the real sequence, particularly Ring's release step and preview hover delays. Reduce Motion shows the result without replaying motion.
 
 ## Scope
 
 Menu-bar item listing from the original app is intentionally omitted. Current work focuses on windows, Spaces, previews, and window placement. Platform limitations belong in [Inset gaps](inset-gaps.md).
+
+
+## Updates
+
+The Updates entity checks https://edged2.app/api/version shortly after startup when no check has been attempted that UTC day. 

@@ -10,5 +10,10 @@ publish.workspace = true
 edged-macos.workspace = true
 inset-foundation.workspace = true
 
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3.3", default-features = false, features = ["rustls"] }
+
 [lints]
 workspace = true
